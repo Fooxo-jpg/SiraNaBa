@@ -6,7 +6,6 @@ import { useSession } from '../context/SessionContext.jsx';
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: 'grid', end: true },
   { to: '/maintenance', label: 'Maintenance', icon: 'wrench' },
-  { to: '/tickets', label: 'Tickets', icon: 'ticket' },
   { to: '/billing', label: 'Payments', icon: 'card' },
   { to: '/notifications', label: 'Notifications', icon: 'bell' },
 ];

@@ -30,7 +30,7 @@ export default function Dashboard() {
   const unreadCount = 3; // sourced from notifications endpoint in Notifications page
 
   return (
-    <Layout crumb="Home" unreadCount={unreadCount}>
+    <Layout unreadCount={unreadCount}>
       {status === 'loading' && <LoadingState label="Loading your dashboard…" />}
       {status === 'error' && <ErrorState message="We couldn't load your dashboard." onRetry={load} />}
 

@@ -4,6 +4,7 @@ export function formatCurrency(value) {
 }
 
 export function formatRelativeTime(isoString) {
+  if (!isoString) return '—';
   const date = new Date(isoString);
   const diffMs = Date.now() - date.getTime();
   const diffMin = Math.round(diffMs / 60000);

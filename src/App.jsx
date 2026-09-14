@@ -14,7 +14,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Dashboard />} />
       <Route path="/maintenance" element={<Maintenance />} />
-      <Route path="/tickets" element={<Maintenance />} />
+      <Route path="/tickets" element={<Navigate to="/maintenance" replace />} />
       <Route path="/maintenance/new" element={<SubmitRequest />} />
       <Route path="/billing" element={<Billing />} />
       <Route path="/notifications" element={<Notifications />} />

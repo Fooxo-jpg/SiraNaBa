@@ -47,7 +47,7 @@ export default function Billing() {
     : [];
 
   return (
-    <Layout crumb="Home">
+    <Layout crumb="Payments">
       {status === 'loading' && <LoadingState label="Loading billing information…" />}
       {status === 'error' && <ErrorState message="We couldn't load your billing details." onRetry={load} />}
 

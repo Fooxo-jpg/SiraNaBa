@@ -50,7 +50,7 @@ export default function Maintenance() {
   };
 
   return (
-    <Layout crumb="Home">
+    <Layout crumb="Maintenance">
       {status === 'loading' && <LoadingState label="Loading tickets…" />}
       {status === 'error' && <ErrorState message="We couldn't load your tickets." onRetry={load} />}
 
@@ -58,9 +58,9 @@ export default function Maintenance() {
         <div className="space-y-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-ink-900">Live Ticket Tracking</h1>
+              <h1 className="text-2xl font-bold text-ink-900">Maintenance</h1>
               <p className="text-sm text-ink-700/60">
-                Monitor the real-time progress of your maintenance requests.
+                Submit requests and monitor the real-time progress of your maintenance tickets.
               </p>
             </div>
             <div className="flex gap-3">

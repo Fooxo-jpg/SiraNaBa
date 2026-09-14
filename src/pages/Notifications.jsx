@@ -78,7 +78,7 @@ export default function Notifications() {
     );
 
   return (
-    <Layout crumb="Home">
+    <Layout crumb="Notifications">
       {status === 'loading' && <LoadingState label="Loading notifications…" />}
       {status === 'error' && <ErrorState message="We couldn't load your notifications." onRetry={load} />}
 

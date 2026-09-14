@@ -16,8 +16,13 @@ export default function Topbar({ crumb, onOpenMenu, unreadCount = 0 }) {
       </button>
 
       <nav aria-label="Breadcrumb" className="hidden text-sm text-ink-700/60 sm:block">
-        Dashboard <span className="mx-1.5">/</span>
-        <span className="font-medium text-ink-900">{crumb}</span>
+        Dashboard
+        {crumb && (
+          <>
+            <span className="mx-1.5">/</span>
+            <span className="font-medium text-ink-900">{crumb}</span>
+          </>
+        )}
       </nav>
 
       <div className="ml-auto flex items-center gap-2 sm:gap-4">
