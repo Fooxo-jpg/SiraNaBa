@@ -49,7 +49,15 @@ function SidebarContent({ onNavigate }) {
       </div>
 
       <div>
-        <div className="mb-3 flex items-center gap-3 border-t border-black/5 px-2 pt-4">
+        <NavLink
+          to="/settings"
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            `mb-3 flex items-center gap-3 rounded-lg border-t border-black/5 px-2 pb-1 pt-4 transition-colors ${
+              isActive ? 'bg-forest-100' : 'hover:bg-sand-100'
+            }`
+          }
+        >
           <div className="h-9 w-9 flex-shrink-0 rounded-full bg-forest-100 text-center text-sm font-semibold leading-9 text-forest-700">
             {tenant ? `${tenant.firstName[0]}${tenant.lastName[0]}` : '··'}
           </div>
@@ -61,9 +69,8 @@ function SidebarContent({ onNavigate }) {
               {tenant ? `Unit ${tenant.unit}, ${tenant.building}` : ''}
             </p>
           </div>
-        </div>
+        </NavLink>
         <div className="flex flex-col gap-1">
-          <NavItem to="/settings" label="Account Settings" icon="settings" onNavigate={onNavigate} />
           <NavItem to="/admin" label="Sign Out" icon="logout" onNavigate={onNavigate} />
         </div>
       </div>
