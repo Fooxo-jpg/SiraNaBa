@@ -53,25 +53,25 @@ function SidebarContent({ onNavigate }) {
           to="/settings"
           onClick={onNavigate}
           className={({ isActive }) =>
-            `mb-3 flex items-center gap-3 rounded-lg border-t border-black/5 px-2 pb-1 pt-4 transition-colors ${
+            `mb-3 flex items-center gap-3 rounded-lg border-t border-black/5 px-2 py-3 transition-colors ${
               isActive ? 'bg-forest-100' : 'hover:bg-sand-100'
             }`
           }
         >
-          <div className="h-9 w-9 flex-shrink-0 rounded-full bg-forest-100 text-center text-sm font-semibold leading-9 text-forest-700">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-forest-100 text-sm font-semibold text-forest-700">
             {tenant ? `${tenant.firstName[0]}${tenant.lastName[0]}` : '··'}
           </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-ink-900">
+          <div className="min-w-0 flex flex-col justify-center">
+            <p className="truncate text-sm font-semibold text-ink-900 leading-tight">
               {tenant ? `${tenant.firstName} ${tenant.lastName}` : 'Loading…'}
             </p>
-            <p className="truncate text-xs text-ink-700/60">
+            <p className="truncate text-xs text-ink-700/60 leading-tight">
               {tenant ? `Unit ${tenant.unit}, ${tenant.building}` : ''}
             </p>
           </div>
         </NavLink>
         <div className="flex flex-col gap-1">
-          <NavItem to="/admin" label="Sign Out" icon="logout" onNavigate={onNavigate} />
+          <NavItem to="/login" label="Sign Out" icon="logout" onNavigate={onNavigate} />
         </div>
       </div>
     </div>

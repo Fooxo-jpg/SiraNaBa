@@ -11,6 +11,28 @@ export function ProgressBar({ value, max, color = 'bg-forest-500' }) {
   );
 }
 
+export function ToggleSwitch({ checked, onChange, label }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+        checked ? 'bg-forest-500' : 'bg-black/15'
+      }`}
+    >
+      <span
+        className={`inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+        style={{ height: '18px', width: '18px' }}
+      />
+    </button>
+  );
+}
+
 export function StatTile({ icon, iconTone = 'text-forest-600 bg-forest-50', label, value, hint }) {
   return (
     <Card className="p-5">

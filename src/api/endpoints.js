@@ -15,6 +15,6 @@ export const endpoints = {
   markAllNotificationsRead: () => api.post('/api/notifications/mark-all-read'),
   markNotificationRead: (id) => api.patch(`/api/notifications/${id}/read`),
 
-  adminLogin: (email, password) =>
-    api.post('/api/auth/admin-login', { email, password }),
+  login: (email, password) =>
+    api.post('/api/auth/login', { email, password }),
 };

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout.jsx';
 import Card from '../components/Card.jsx';
 import Icon from '../components/Icon.jsx';
+import Modal from '../components/Modal.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import DataTable from '../components/DataTable.jsx';
 import { ProgressBar, LoadingState, ErrorState } from '../components/Common.jsx';
@@ -18,10 +19,82 @@ const UTILITY_TONE = {
 
 const TABS = ['All Transactions', 'Rent Only', 'Utilities', 'Failed'];
 
+const PAYMENT_PLANS = [
+  {
+    id: 'full',
+    title: 'Pay in Full',
+    description: 'One payment for the full balance due on the due date.',
+  },
+  {
+    id: 'split2',
+    title: 'Split into 2 Payments',
+    description: 'Half of the balance now, the remainder two weeks before the due date.',
+  },
+  {
+    id: 'split3',
+    title: 'Split into 3 Payments',
+    description: 'Balance divided evenly across three payments over the billing cycle.',
+  },
+];
+
+const PAYMENT_LIMITS = [
+  { icon: 'clock', label: 'Daily Transaction Limit', value: '$5,000.00' },
+  { icon: 'calendar', label: 'Monthly Transaction Limit', value: '$20,000.00' },
+  { icon: 'card', label: 'Per-Transaction Limit', value: '$10,000.00' },
+];
+
+const BILLING_FAQS = [
+  {
+    q: 'When is my rent due each month?',
+    a: 'Rent is due on the 1st of every month. A grace period applies through the 5th, after which a late fee may be added to your balance.',
+  },
+  {
+    q: 'What happens if a payment fails?',
+    a: "We'll retry the charge and notify you by email and in-app notification. Your transaction history will show the attempt with a Failed status so you can update your payment method if needed.",
+  },
+  {
+    q: 'How does auto-pay work?',
+    a: 'When auto-pay is active, your primary payment method is charged automatically on the due date for the current balance. You can turn it off anytime from your payment method settings.',
+  },
+  {
+    q: 'Can I change my payment method at any time?',
+    a: "Yes. Open Manage Payment Methods to add a new card or bank account, set a different primary method, or remove one you no longer use.",
+  },
+  {
+    q: 'How are utility charges calculated?',
+    a: 'Utility charges are estimated from the previous month\u2019s usage and reconciled against actual meter readings, with any adjustment applied to the following invoice.',
+  },
+];
+
+function AccordionItem({ question, answer, open, onToggle }) {
+  return (
+    <div className="border-b border-black/5 last:border-b-0">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 py-3 text-left text-sm font-medium text-ink-900"
+      >
+        {question}
+        <Icon
+          name="chevronRight"
+          size={15}
+          className={`flex-shrink-0 text-ink-700/50 transition-transform ${open ? 'rotate-90' : ''}`}
+        />
+      </button>
+      {open && <p className="pb-3 text-sm leading-relaxed text-ink-700/60">{answer}</p>}
+    </div>
+  );
+}
+
 export default function Billing() {
   const [billing, setBilling] = useState(null);
   const [status, setStatus] = useState('loading');
   const [tab, setTab] = useState('All Transactions');
+  const [modal, setModal] = useState(null);
+  const closeModal = () => setModal(null);
+
+  const [selectedPlan, setSelectedPlan] = useState('full');
+  const [setAsPrimary, setSetAsPrimary] = useState(false);
+  const [openFaq, setOpenFaq] = useState(0);
 
   const load = () => {
     setStatus('loading');
@@ -52,6 +125,7 @@ export default function Billing() {
       {status === 'error' && <ErrorState message="We couldn't load your billing details." onRetry={load} />}
 
       {status === 'ready' && billing && (
+        <>
         <div className="space-y-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -62,10 +136,16 @@ export default function Billing() {
               </p>
             </div>
             <div className="flex gap-3">
-              <button className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100">
+              <button
+                onClick={() => setModal('tax')}
+                className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100"
+              >
                 Tax Statements
               </button>
-              <button className="flex items-center gap-1.5 rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600">
+              <button
+                onClick={() => setModal('addMethod')}
+                className="flex items-center gap-1.5 rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
+              >
                 <Icon name="plus" size={15} /> Add Payment Method
               </button>
             </div>
@@ -92,7 +172,10 @@ export default function Billing() {
                 <button className="flex-1 rounded-md bg-forest-500 px-3 py-2 text-sm font-semibold text-white hover:bg-forest-600">
                   Pay Total Now
                 </button>
-                <button className="flex-1 rounded-md border border-black/10 px-3 py-2 text-sm font-medium hover:bg-sand-100">
+                <button
+                  onClick={() => setModal('editPlan')}
+                  className="flex-1 rounded-md border border-black/10 px-3 py-2 text-sm font-medium hover:bg-sand-100"
+                >
                   Edit Payment Plan
                 </button>
               </div>
@@ -134,10 +217,16 @@ export default function Billing() {
                 {billing.paymentMethod.isPrimary && <StatusBadge label="Primary" tone="success" />}
               </div>
               <div className="mt-3 divide-y divide-black/5 text-sm">
-                <button className="flex w-full items-center justify-between py-2.5 text-ink-900 hover:text-forest-600">
-                  Management Methods <Icon name="chevronRight" size={15} />
+                <button
+                  onClick={() => setModal('manageMethods')}
+                  className="flex w-full items-center justify-between py-2.5 text-ink-900 hover:text-forest-600"
+                >
+                  Manage Payment Methods <Icon name="chevronRight" size={15} />
                 </button>
-                <button className="flex w-full items-center justify-between py-2.5 text-ink-900 hover:text-forest-600">
+                <button
+                  onClick={() => setModal('limits')}
+                  className="flex w-full items-center justify-between py-2.5 text-ink-900 hover:text-forest-600"
+                >
                   View Payment Limits <Icon name="chevronRight" size={15} />
                 </button>
               </div>
@@ -258,7 +347,10 @@ export default function Billing() {
                   <button className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-forest-700 hover:bg-white/90">
                     Contact Billing Support
                   </button>
-                  <button className="rounded-md border border-white/40 px-4 py-2 text-sm font-medium hover:bg-white/10">
+                  <button
+                    onClick={() => setModal('faq')}
+                    className="rounded-md border border-white/40 px-4 py-2 text-sm font-medium hover:bg-white/10"
+                  >
                     Billing FAQ
                   </button>
                 </div>
@@ -270,6 +362,259 @@ export default function Billing() {
             </div>
           </Card>
         </div>
+
+        {/* Tax Statements */}
+        <Modal open={modal === 'tax'} onClose={closeModal} title="Tax Statements">
+          <p className="mb-4 text-sm text-ink-700/60">
+            Download official statements of your rent and utility payments for tax purposes.
+          </p>
+          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-black/10 bg-sand-50 px-4 py-8 text-center">
+            <Icon name="fileText" size={22} className="text-ink-700/40" />
+            <p className="text-sm font-semibold text-ink-900">No tax statements available yet</p>
+            <p className="text-xs text-ink-700/50">
+              Statements are generated once your account has a full billing year on file. Check
+              back after your next annual cycle.
+            </p>
+          </div>
+          <div className="mt-4 flex items-center justify-between rounded-lg border border-black/5 p-3 text-sm text-ink-700/60">
+            <span className="flex items-center gap-2">
+              <Icon name="info" size={15} /> Need an earlier statement?
+            </span>
+            <button className="font-medium text-forest-600 hover:underline">Request one</button>
+          </div>
+        </Modal>
+
+        {/* Add Payment Method */}
+        <Modal
+          open={modal === 'addMethod'}
+          onClose={closeModal}
+          title="Add Payment Method"
+          footer={
+            <>
+              <button
+                onClick={closeModal}
+                className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={closeModal}
+                className="rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
+              >
+                Save Payment Method
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-ink-700/60">Card Number</span>
+              <input
+                type="text"
+                placeholder="1234 5678 9012 3456"
+                className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-ink-700/60">Name on Card</span>
+              <input
+                type="text"
+                placeholder="Juan Dela Cruz"
+                className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400"
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-4">
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-ink-700/60">Expiry Date</span>
+                <input
+                  type="text"
+                  placeholder="MM/YY"
+                  className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-ink-700/60">CVV</span>
+                <input
+                  type="text"
+                  placeholder="•••"
+                  className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400"
+                />
+              </label>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-ink-700/70">
+              <input
+                type="checkbox"
+                checked={setAsPrimary}
+                onChange={(e) => setSetAsPrimary(e.target.checked)}
+                className="h-4 w-4 rounded border-black/20 text-forest-600 focus:ring-forest-400"
+              />
+              Set as primary payment method
+            </label>
+            <p className="flex items-center gap-1.5 text-xs text-ink-700/40">
+              <Icon name="lock" size={13} /> Your payment details are encrypted and processed securely.
+            </p>
+          </div>
+        </Modal>
+
+        {/* Edit Payment Plan */}
+        <Modal
+          open={modal === 'editPlan'}
+          onClose={closeModal}
+          title="Edit Payment Plan"
+          footer={
+            <>
+              <button
+                onClick={closeModal}
+                className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={closeModal}
+                className="rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
+              >
+                Save Changes
+              </button>
+            </>
+          }
+        >
+          <p className="mb-4 text-sm text-ink-700/60">
+            Choose how you'd like to pay your{' '}
+            <span className="font-semibold text-ink-900">{formatCurrency(billing.currentBalanceDue)}</span> balance
+            due {formatDate(billing.dueDate)}.
+          </p>
+          <div className="space-y-2.5">
+            {PAYMENT_PLANS.map((plan) => (
+              <button
+                key={plan.id}
+                onClick={() => setSelectedPlan(plan.id)}
+                className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
+                  selectedPlan === plan.id
+                    ? 'border-forest-500 bg-forest-50'
+                    : 'border-black/10 hover:bg-sand-100'
+                }`}
+              >
+                <span
+                  className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+                    selectedPlan === plan.id ? 'border-forest-500' : 'border-black/20'
+                  }`}
+                >
+                  {selectedPlan === plan.id && <span className="h-2 w-2 rounded-full bg-forest-500" />}
+                </span>
+                <span>
+                  <span className="block text-sm font-semibold text-ink-900">{plan.title}</span>
+                  <span className="block text-xs text-ink-700/50">{plan.description}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </Modal>
+
+        {/* Manage Payment Methods */}
+        <Modal
+          open={modal === 'manageMethods'}
+          onClose={closeModal}
+          title="Manage Payment Methods"
+          footer={
+            <button
+              onClick={closeModal}
+              className="rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
+            >
+              Done
+            </button>
+          }
+        >
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 rounded-lg border border-black/5 p-3">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-sand-100 text-ink-700/60">
+                <Icon name="card" size={16} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-ink-900">
+                  {billing.paymentMethod.brand} ending in {billing.paymentMethod.last4}
+                </p>
+                <p className="text-xs text-ink-700/50">Expires {billing.paymentMethod.expiry}</p>
+              </div>
+              <div className="flex flex-shrink-0 items-center gap-1">
+                {billing.paymentMethod.isPrimary ? (
+                  <StatusBadge label="Primary" tone="success" />
+                ) : (
+                  <button
+                    aria-label="Set as primary"
+                    className="rounded-full p-1.5 text-ink-700/50 hover:bg-sand-100 hover:text-forest-600"
+                  >
+                    <Icon name="star" size={15} />
+                  </button>
+                )}
+                <button
+                  aria-label="Edit payment method"
+                  className="rounded-full p-1.5 text-ink-700/50 hover:bg-sand-100 hover:text-forest-600"
+                >
+                  <Icon name="pencil" size={15} />
+                </button>
+                <button
+                  aria-label="Remove payment method"
+                  className="rounded-full p-1.5 text-ink-700/50 hover:bg-sand-100 hover:text-status-high"
+                >
+                  <Icon name="trash" size={15} />
+                </button>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setModal('addMethod')}
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-black/15 py-2.5 text-sm font-medium text-forest-600 hover:bg-forest-50"
+          >
+            <Icon name="plus" size={14} /> Add New Payment Method
+          </button>
+        </Modal>
+
+        {/* View Payment Limits */}
+        <Modal open={modal === 'limits'} onClose={closeModal} title="View Payment Limits">
+          <p className="mb-4 text-sm text-ink-700/60">
+            These limits apply to payments made through your account for security purposes.
+          </p>
+          <div className="space-y-2.5">
+            {PAYMENT_LIMITS.map((row) => (
+              <div
+                key={row.label}
+                className="flex items-center justify-between rounded-lg border border-black/5 p-3"
+              >
+                <span className="flex items-center gap-2.5 text-sm text-ink-700/70">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-sand-100 text-ink-700/60">
+                    <Icon name={row.icon} size={15} />
+                  </span>
+                  {row.label}
+                </span>
+                <span className="text-sm font-semibold text-ink-900">{row.value}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 flex items-center gap-1.5 text-xs text-ink-700/40">
+            <Icon name="info" size={13} /> Need a higher limit? Contact billing support to request an increase.
+          </p>
+        </Modal>
+
+        {/* Billing FAQ */}
+        <Modal open={modal === 'faq'} onClose={closeModal} title="Billing FAQ">
+          <div>
+            {BILLING_FAQS.map((item, i) => (
+              <AccordionItem
+                key={item.q}
+                question={item.q}
+                answer={item.a}
+                open={openFaq === i}
+                onToggle={() => setOpenFaq(openFaq === i ? null : i)}
+              />
+            ))}
+          </div>
+          <div className="mt-4 flex items-center gap-2 rounded-lg bg-sand-100 p-3 text-xs text-ink-700/60">
+            <Icon name="help" size={15} className="flex-shrink-0 text-ink-700/50" />
+            Still have questions? Reach out through Contact Billing Support and our team will get
+            back to you within 2 hours.
+          </div>
+        </Modal>
+        </>
       )}
     </Layout>
   );

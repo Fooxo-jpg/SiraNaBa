@@ -98,7 +98,7 @@ export async function mockRequest(path, options = {}) {
     return clone(notif);
   }
 
-  if (path === '/api/auth/admin-login' && method === 'POST') {
+  if (path === '/api/auth/login' && method === 'POST') {
     if (!body?.email || !body?.password) {
       throw new Error('Email and password are required.');
     }

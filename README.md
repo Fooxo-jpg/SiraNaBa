@@ -45,7 +45,7 @@ The UI never talks to mock data directly — every screen calls `endpoints.*` in
 1. Set `VITE_API_BASE_URL` in a `.env` file (e.g. `VITE_API_BASE_URL=https://api.siranaba.com`).
 2. Implement the REST routes listed in `mockServer.js` on your backend (same paths, same
    request/response shapes) — `/api/tenant`, `/api/dashboard/summary`, `/api/tickets`,
-   `/api/tickets/:id`, `/api/billing`, `/api/notifications`, `/api/auth/admin-login`.
+   `/api/tickets/:id`, `/api/billing`, `/api/notifications`, `/api/auth/login`.
 3. Remove `src/data/mockDb.js` and `src/data/mockServer.js` once the real API is in place —
    `client.js` only imports them when `VITE_API_BASE_URL` is unset, so nothing else changes.
 

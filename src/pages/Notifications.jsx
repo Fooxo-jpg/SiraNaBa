@@ -3,13 +3,26 @@ import { Link } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import Card from '../components/Card.jsx';
 import Icon from '../components/Icon.jsx';
+import Modal from '../components/Modal.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
-import { LoadingState, ErrorState } from '../components/Common.jsx';
+import { LoadingState, ErrorState, ToggleSwitch } from '../components/Common.jsx';
 import { endpoints } from '../api/endpoints.js';
 import { formatRelativeTime } from '../utils/format.js';
 
 const CATEGORY_ICON = { Payments: 'card', Maintenance: 'wrench', Community: 'info' };
 const PAGE_SIZE = 6;
+
+const DEFAULT_CHANNELS = [
+  { id: 'email', label: 'Email', description: 'Get a copy of every alert in your inbox.' },
+  { id: 'sms', label: 'SMS', description: 'Text messages for time-sensitive alerts.' },
+  { id: 'push', label: 'Push Notifications', description: 'Alerts on this device in real time.' },
+];
+
+const DEFAULT_CATEGORIES = [
+  { id: 'Payments', label: 'Payments', description: 'Due dates, receipts, and failed charges.' },
+  { id: 'Maintenance', label: 'Maintenance', description: 'Ticket updates and scheduled work.' },
+  { id: 'Community', label: 'Community', description: 'Announcements and facility notices.' },
+];
 
 // Not real data - shown only while /api/notifications returns nothing, so
 // the intended card layout stays visible. Remove once live alerts exist.
@@ -28,6 +41,9 @@ export default function Notifications() {
   const [category, setCategory] = useState('All Alerts');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [channels, setChannels] = useState({ email: true, sms: false, push: true });
+  const [categoryPrefs, setCategoryPrefs] = useState({ Payments: true, Maintenance: true, Community: true });
 
   const load = () => {
     setStatus('loading');
@@ -98,7 +114,10 @@ export default function Notifications() {
               >
                 Mark all as read
               </button>
-              <button className="flex items-center gap-1.5 rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600">
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="flex items-center gap-1.5 rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
+              >
                 <Icon name="bell" size={15} /> Alert Settings
               </button>
             </div>
@@ -280,6 +299,77 @@ export default function Notifications() {
           </div>
         </div>
       )}
+
+      <Modal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        title="Alert Settings"
+        footer={
+          <>
+            <button
+              onClick={() => setSettingsOpen(false)}
+              className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => setSettingsOpen(false)}
+              className="rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
+            >
+              Save Preferences
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-5">
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">
+              Delivery Channels
+            </p>
+            <div className="space-y-3">
+              {DEFAULT_CHANNELS.map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-ink-900">{c.label}</p>
+                    <p className="text-xs text-ink-700/50">{c.description}</p>
+                  </div>
+                  <ToggleSwitch
+                    checked={channels[c.id]}
+                    onChange={(v) => setChannels((prev) => ({ ...prev, [c.id]: v }))}
+                    label={c.label}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-black/5 pt-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">
+              Alert Categories
+            </p>
+            <div className="space-y-3">
+              {DEFAULT_CATEGORIES.map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-ink-900">{c.label}</p>
+                    <p className="text-xs text-ink-700/50">{c.description}</p>
+                  </div>
+                  <ToggleSwitch
+                    checked={categoryPrefs[c.id]}
+                    onChange={(v) => setCategoryPrefs((prev) => ({ ...prev, [c.id]: v }))}
+                    label={c.label}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="flex items-center gap-1.5 border-t border-black/5 pt-3 text-xs text-ink-700/40">
+            <Icon name="info" size={13} /> High-priority facility alerts are always sent regardless of
+            these settings.
+          </p>
+        </div>
+      </Modal>
     </Layout>
   );
 }
