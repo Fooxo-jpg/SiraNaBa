@@ -8,18 +8,29 @@ const TONE_MAP = {
   successful: 'success',
   resolved: 'success',
   applied: 'success',
+  active: 'success',
+  clear: 'success',
+  healthy: 'success',
+  connected: 'success',
+  online: 'success',
   // in-flight states
   'in progress': 'progress',
   scheduled: 'progress',
   assigned: 'progress',
   loading: 'progress',
+  degraded: 'progress',
+  warning: 'progress',
   submitted: 'neutral',
+  informational: 'neutral',
   // priority
+  critical: 'danger',
   high: 'danger',
   medium: 'progress',
   low: 'neutral',
-  // payment states
+  // payment / account states
   failed: 'danger',
+  delinquent: 'danger',
+  eviction: 'danger',
 };
 
 const TONE_STYLES = {

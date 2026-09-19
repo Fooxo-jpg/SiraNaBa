@@ -52,6 +52,41 @@ export default function Login() {
           </p>
         </div>
 
+        {/* Temporary testing shortcuts — no password required */}
+        <div className="mb-6 rounded-lg border border-dashed border-forest-300 bg-forest-50 p-3.5">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-forest-700">
+            <Icon name="info" size={13} /> Testing Access
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="flex flex-col items-center gap-1 rounded-md border border-forest-200 bg-white py-2.5 text-xs font-semibold text-ink-900 hover:bg-forest-100"
+            >
+              <Icon name="grid" size={16} className="text-forest-600" />
+              Continue as Guest
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/admin')}
+              className="flex flex-col items-center gap-1 rounded-md border border-forest-200 bg-white py-2.5 text-xs font-semibold text-ink-900 hover:bg-forest-100"
+            >
+              <Icon name="shield" size={16} className="text-forest-600" />
+              Continue as Admin
+            </button>
+          </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-forest-700/70">
+            No password needed — jumps straight into the tenant portal or the admin command center
+            for testing.
+          </p>
+        </div>
+
+        <div className="mb-4 flex items-center gap-3 text-xs text-ink-700/40">
+          <span className="h-px flex-1 bg-black/5" />
+          Or sign in with credentials
+          <span className="h-px flex-1 bg-black/5" />
+        </div>
+
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-700/50">

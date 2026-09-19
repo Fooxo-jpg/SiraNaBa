@@ -1,0 +1,161 @@
+import React, { useMemo, useState } from 'react';
+import AdminLayout from '../../components/admin/AdminLayout.jsx';
+import Card from '../../components/Card.jsx';
+import Icon from '../../components/Icon.jsx';
+import { configuration } from '../../data/adminMockDb.js';
+
+const TABS = [
+  { id: 'logs', label: 'System Logs', icon: 'grid' },
+  { id: 'rules', label: 'Dispatch Rules', icon: 'bell' },
+  { id: 'database', label: 'Database', icon: 'database' },
+  { id: 'advanced', label: 'Advanced', icon: 'settings' },
+];
+
+const STATUS_STYLES = {
+  Healthy: 'text-status-success',
+  Connected: 'text-status-success',
+  Degraded: 'text-status-high',
+};
+
+const LEVEL_STYLES = {
+  INFO: 'bg-white/10 text-white/70',
+  WARN: 'bg-status-progress/20 text-status-progress',
+  ERROR: 'bg-status-high/20 text-status-high',
+  DEBUG: 'bg-white/10 text-white/50',
+};
+
+export default function Configuration() {
+  const { systemStatus, logs, version, sessionRemaining } = configuration;
+  const [tab, setTab] = useState('logs');
+  const [query, setQuery] = useState('');
+
+  const filteredLogs = useMemo(
+    () => (!query ? logs : logs.filter((l) => l.text.toLowerCase().includes(query.toLowerCase()) || l.tag.toLowerCase().includes(query.toLowerCase()))),
+    [logs, query]
+  );
+
+  return (
+    <AdminLayout crumb="Configuration">
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-ink-900">System Configuration</h1>
+          <p className="text-sm text-ink-700/60">
+            Manage administrative overrides, audit system logs, and notification dispatching logic.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {systemStatus.map((s) => (
+            <Card key={s.id} className="p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="flex items-center gap-2 font-semibold text-ink-900">
+                  <Icon name={s.icon} size={16} className="text-forest-600" /> {s.label}
+                </span>
+                <span className={`flex items-center gap-1 text-xs font-semibold uppercase ${STATUS_STYLES[s.status] || 'text-ink-700/50'}`}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" /> {s.status}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {s.metrics.map((m) => (
+                  <div key={m.label}>
+                    <p className="text-ink-700/50">{m.label}</p>
+                    <p className="font-mono font-semibold text-ink-900">{m.value}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  tab === t.id
+                    ? 'border-forest-500 bg-forest-50 text-forest-700'
+                    : 'border-black/10 text-ink-700/60 hover:bg-sand-100'
+                }`}
+              >
+                <Icon name={t.icon} size={14} /> {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button className="flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-sm font-medium hover:bg-sand-100">
+              <Icon name="refresh" size={14} /> Sync Config
+            </button>
+            <button className="flex items-center gap-1.5 rounded-md bg-forest-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-forest-600">
+              <Icon name="upload" size={14} /> Save Changes
+            </button>
+          </div>
+        </div>
+
+        {tab === 'logs' ? (
+          <Card className="bg-ink-900 p-5 text-white">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">MongoDB Event Store Logs</h2>
+                <p className="text-xs text-white/50">Real-time telemetry from the primary database cluster.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="relative">
+                  <span className="sr-only">Filter log patterns</span>
+                  <Icon
+                    name="search"
+                    size={14}
+                    className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40"
+                  />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Filter log patterns..."
+                    className="w-48 rounded-md border border-white/15 bg-white/5 py-1.5 pl-7 pr-2 text-xs text-white outline-none placeholder:text-white/30 focus:border-forest-400"
+                  />
+                </label>
+                <button className="flex items-center gap-1 rounded-md border border-white/15 px-2.5 py-1.5 text-xs font-medium text-white/70 hover:bg-white/10">
+                  <Icon name="filter" size={13} /> Levels
+                </button>
+                <button className="flex items-center gap-1 rounded-md border border-white/15 px-2.5 py-1.5 text-xs font-medium text-white/70 hover:bg-white/10">
+                  <Icon name="download" size={13} /> Export
+                </button>
+              </div>
+            </div>
+            <div className="max-h-80 space-y-2.5 overflow-y-auto thin-scrollbar font-mono text-xs">
+              {filteredLogs.map((l, i) => (
+                <div key={i} className="flex flex-wrap items-start gap-2">
+                  <span className="w-40 flex-shrink-0 text-white/40">{l.time}</span>
+                  <span className={`flex-shrink-0 rounded px-1.5 py-0.5 font-semibold ${LEVEL_STYLES[l.level]}`}>
+                    {l.level}
+                  </span>
+                  <span className="flex-shrink-0 text-white/40">[{l.tag}]</span>
+                  <span className="min-w-0 flex-1 text-white/80">{l.text}</span>
+                </div>
+              ))}
+              {filteredLogs.length === 0 && <p className="text-white/40">No log lines match that filter.</p>}
+              <p className="text-white/30">&gt; Waiting for incoming log stream...</p>
+            </div>
+          </Card>
+        ) : (
+          <Card className="flex flex-col items-center justify-center gap-2 p-10 text-center text-sm text-ink-700/50">
+            <Icon name="info" size={18} className="text-ink-700/30" />
+            {TABS.find((t) => t.id === tab)?.label} isn't populated in this demo yet.
+          </Card>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-black/5 pt-4 text-xs text-ink-700/50">
+          <div className="flex gap-4">
+            <button className="hover:text-ink-900">Audit Trail</button>
+            <button className="hover:text-ink-900">Security Policy</button>
+            <button className="hover:text-ink-900">Cluster Docs</button>
+          </div>
+          <span>
+            {version} • {sessionRemaining}
+          </span>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+}
