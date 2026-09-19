@@ -45,9 +45,18 @@ export async function mockRequest(path, options = {}) {
     const newTicket = {
       id: `TKT-${Math.floor(2000 + Math.random() * 900)}`,
       stage: 'Submitted',
+      priority: null, // Severity is assessed by AI triage; null renders as "Loading" until then.
       submittedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      specialist: { name: 'Unassigned', title: '' },
+      specialist: {
+        name: 'Unassigned',
+        title: '',
+        rating: 0,
+        reviewCount: 0,
+        eta: null,
+        status: 'Not started',
+        phone: null,
+      },
       attachments: [],
       timeline: [
         {

@@ -5,6 +5,7 @@ import Card from '../components/Card.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import AttachmentGrid from '../components/AttachmentGrid.jsx';
 import { LoadingState, ErrorState } from '../components/Common.jsx';
 import { endpoints } from '../api/endpoints.js';
 import { formatDate, formatTime } from '../utils/format.js';
@@ -36,9 +37,25 @@ export default function TicketDetail() {
     endpoints.updateTicket(ticket.id, { stage: 'Resolved' }).then(load);
   };
 
+  const addAttachments = (items) => {
+    if (!ticket) return;
+    const updated = [
+      ...(ticket.attachments || []),
+      ...items.map(({ id, name, previewUrl }) => ({ id, label: name, previewUrl })),
+    ];
+    endpoints.updateTicket(ticket.id, { attachments: updated }).then(load);
+  };
+
+  const removeAttachment = (attId) => {
+    if (!ticket) return;
+    const updated = (ticket.attachments || []).filter((a) => a.id !== attId);
+    endpoints.updateTicket(ticket.id, { attachments: updated }).then(load);
+  };
+
   const stageIndex = ticket ? STAGES.indexOf(ticket.stage) : -1;
   const isLive = ticket?.stage === 'In Progress';
   const isUrgent = ticket?.priority === 'High';
+  const isPending = ticket && !ticket.priority;
   const hasSpecialist = ticket?.specialist && ticket.specialist.name !== 'Unassigned';
   const firstName = ticket?.specialist?.name?.split(' ')[0] || 'the technician';
 
@@ -70,6 +87,11 @@ export default function TicketDetail() {
               {isLive && (
                 <span className="flex items-center gap-1.5 rounded-full bg-status-successBg px-3 py-1 text-xs font-semibold text-status-success">
                   <span className="h-1.5 w-1.5 rounded-full bg-status-success" /> Live: {ticket.stage}
+                </span>
+              )}
+              {isPending && (
+                <span className="flex items-center gap-1.5 rounded-full bg-status-progressBg px-3 py-1 text-xs font-semibold text-status-progress">
+                  <Icon name="clock" size={12} /> Severity: Loading
                 </span>
               )}
               {isUrgent && (
@@ -188,21 +210,14 @@ export default function TicketDetail() {
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">
                         Attachments &amp; Evidence
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        {ticket.attachments?.map((a) => (
-                          <div
-                            key={a.id}
-                            className="flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-lg bg-sand-100 text-ink-700/40"
-                          >
-                            <Icon name="fileText" size={16} />
-                            <span className="text-[9px] uppercase">{a.label || 'Photo'}</span>
-                          </div>
-                        ))}
-                        <button className="flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-black/15 text-ink-700/40 hover:bg-sand-50">
-                          <Icon name="plus" size={16} />
-                          <span className="text-[10px]">Add</span>
-                        </button>
-                      </div>
+                      <AttachmentGrid
+                        attachments={ticket.attachments}
+                        onAdd={addAttachments}
+                        onRemove={removeAttachment}
+                      />
+                      <p className="mt-1.5 text-xs text-ink-700/50">
+                        Attach up to 5 photos or PDFs so our technicians know what to expect.
+                      </p>
                     </div>
 
                     {ticket.safetyNote && (

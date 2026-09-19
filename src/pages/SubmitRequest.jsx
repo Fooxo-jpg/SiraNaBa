@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import Card from '../components/Card.jsx';
 import Icon from '../components/Icon.jsx';
+import AttachmentGrid from '../components/AttachmentGrid.jsx';
 import { endpoints } from '../api/endpoints.js';
 import { db } from '../data/mockDb.js';
 
@@ -13,7 +14,7 @@ const initialForm = {
   title: '',
   description: '',
   location: '',
-  urgency: 'Medium',
+  attachments: [],
 };
 
 export default function SubmitRequest() {
@@ -24,6 +25,11 @@ export default function SubmitRequest() {
   const [errors, setErrors] = useState({});
 
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const addAttachments = (items) =>
+    setForm((f) => ({ ...f, attachments: [...f.attachments, ...items] }));
+  const removeAttachment = (id) =>
+    setForm((f) => ({ ...f, attachments: f.attachments.filter((a) => a.id !== id) }));
 
   const validateStep = () => {
     const next = {};
@@ -53,7 +59,11 @@ export default function SubmitRequest() {
         title: form.title,
         description: form.description,
         location: form.location,
-        priority: form.urgency,
+        attachments: form.attachments.map(({ id, name, previewUrl }) => ({
+          id,
+          label: name,
+          previewUrl,
+        })),
       });
       navigate('/maintenance');
     } finally {
@@ -147,6 +157,20 @@ export default function SubmitRequest() {
                 )}
               </div>
 
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-ink-900">
+                  Photos &amp; Evidence <span className="font-normal text-ink-700/40">(optional)</span>
+                </label>
+                <AttachmentGrid
+                  attachments={form.attachments}
+                  onAdd={addAttachments}
+                  onRemove={removeAttachment}
+                />
+                <p className="mt-1.5 text-xs text-ink-700/50">
+                  Attach up to 5 photos or PDFs so our technicians know what to expect.
+                </p>
+              </div>
+
               <div className="flex items-start gap-2 rounded-lg bg-forest-50 p-3.5 text-xs text-forest-700">
                 <Icon name="info" size={15} className="mt-0.5 flex-shrink-0" />
                 Include details like specific brands of appliances or the exact behavior of the
@@ -190,7 +214,21 @@ export default function SubmitRequest() {
                     <dd className="col-span-2 font-medium text-ink-900">{value || '—'}</dd>
                   </div>
                 ))}
+                <div className="grid grid-cols-3 gap-3 px-4 py-3">
+                  <dt className="text-ink-700/50">Photos</dt>
+                  <dd className="col-span-2">
+                    {form.attachments.length > 0 ? (
+                      <AttachmentGrid attachments={form.attachments} onRemove={removeAttachment} />
+                    ) : (
+                      <span className="font-medium text-ink-900">—</span>
+                    )}
+                  </dd>
+                </div>
               </dl>
+              <p className="flex items-center gap-1.5 text-xs text-ink-700/50">
+                <Icon name="info" size={13} /> Severity will show as "Loading" until our AI triage
+                system assesses your request.
+              </p>
             </div>
           )}
 

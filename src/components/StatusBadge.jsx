@@ -12,6 +12,7 @@ const TONE_MAP = {
   'in progress': 'progress',
   scheduled: 'progress',
   assigned: 'progress',
+  loading: 'progress',
   submitted: 'neutral',
   // priority
   high: 'danger',

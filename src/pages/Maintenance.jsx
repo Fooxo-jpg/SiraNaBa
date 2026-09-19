@@ -98,7 +98,7 @@ export default function Maintenance() {
                         <div className="min-w-0">
                           <div className="mb-1 flex items-center gap-2">
                             <span className="text-xs font-medium text-ink-700/50">{t.id}</span>
-                            <StatusBadge label={t.priority} />
+                            <StatusBadge label={t.priority || 'Loading'} />
                             {t.stage === 'In Progress' && (
                               <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-forest-600">
                                 <span className="h-1.5 w-1.5 rounded-full bg-forest-500" /> Live
