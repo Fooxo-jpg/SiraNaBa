@@ -31,6 +31,13 @@ const TONE_MAP = {
   failed: 'danger',
   delinquent: 'danger',
   eviction: 'danger',
+  overdue: 'danger',
+  paid: 'success',
+  pending: 'progress',
+  vacating: 'progress',
+  'good standing': 'success',
+  away: 'progress',
+  offline: 'neutral',
 };
 
 const TONE_STYLES = {

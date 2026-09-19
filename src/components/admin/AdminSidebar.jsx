@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: '/admin/triage', label: 'Triage & Dispatch', icon: 'ticket' },
   { to: '/admin/iot', label: 'IoT & Emergency', icon: 'wifi' },
   { to: '/admin/financial', label: 'Tenant & Financial', icon: 'card' },
+  { to: '/admin/staff', label: 'Staff Management', icon: 'users' },
   { to: '/admin/config', label: 'Configuration', icon: 'settings' },
 ];
 

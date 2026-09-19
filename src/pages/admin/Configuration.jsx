@@ -134,7 +134,9 @@ export default function Configuration() {
                   <span className="min-w-0 flex-1 text-white/80">{l.text}</span>
                 </div>
               ))}
-              {filteredLogs.length === 0 && <p className="text-white/40">No log lines match that filter.</p>}
+              {filteredLogs.length === 0 && (
+                <p className="text-white/40">{logs.length === 0 ? 'No log entries yet.' : 'No log lines match that filter.'}</p>
+              )}
               <p className="text-white/30">&gt; Waiting for incoming log stream...</p>
             </div>
           </Card>

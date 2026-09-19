@@ -58,6 +58,11 @@ export default function CommandCenter() {
             </div>
             <p className="mb-3 text-xs text-ink-700/50">High-priority unassigned work orders.</p>
             <div className="space-y-2.5">
+              {dispatchQueue.length === 0 && (
+                <p className="rounded-lg border border-dashed border-black/10 py-6 text-center text-xs text-ink-700/50">
+                  No unassigned work orders.
+                </p>
+              )}
               {dispatchQueue.map((wo) => (
                 <div key={wo.id} className="rounded-lg border border-black/5 p-3">
                   <p className="mb-0.5 text-xs font-medium text-ink-700/50">
@@ -124,8 +129,14 @@ export default function CommandCenter() {
                   ))}
                 </tbody>
               </table>
+              {eventStream.length === 0 && (
+                <p className="py-8 text-center text-sm text-ink-700/50">No events recorded yet.</p>
+              )}
             </div>
-            <button className="mt-4 block w-full text-center text-sm font-medium text-forest-600 hover:underline">
+            <button
+              disabled={eventStream.length === 0}
+              className="mt-4 block w-full text-center text-sm font-medium text-forest-600 hover:underline disabled:cursor-not-allowed disabled:text-ink-700/30 disabled:no-underline"
+            >
               Load More Activity
             </button>
           </Card>
@@ -144,7 +155,11 @@ export default function CommandCenter() {
                   <div
                     className="h-full rounded-full bg-forest-500"
                     style={{
-                      width: `${(staffReadiness.onSiteTechnicians.current / staffReadiness.onSiteTechnicians.total) * 100}%`,
+                      width: `${
+                        staffReadiness.onSiteTechnicians.total
+                          ? (staffReadiness.onSiteTechnicians.current / staffReadiness.onSiteTechnicians.total) * 100
+                          : 0
+                      }%`,
                     }}
                   />
                 </div>
@@ -187,6 +202,7 @@ export default function CommandCenter() {
                 <Icon name="dots" size={14} className="text-white/40" />
               </div>
               <div className="space-y-1.5 font-mono text-xs">
+                {systemIntegrity.length === 0 && <p className="text-white/40">&gt; No system events.</p>}
                 {systemIntegrity.map((line, i) => (
                   <p key={i} className={LOG_STYLES[line.level]}>
                     [{line.level.toUpperCase()}] {line.text}

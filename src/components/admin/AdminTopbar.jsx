@@ -2,7 +2,7 @@ import React from 'react';
 import Icon from '../Icon.jsx';
 import { adminUser } from '../../data/adminMockDb.js';
 
-export default function AdminTopbar({ crumb, onOpenMenu, unreadCount = 2 }) {
+export default function AdminTopbar({ crumb, onOpenMenu, unreadCount = 0 }) {
   return (
     <header className="flex items-center gap-3 border-b border-black/5 bg-white px-4 py-3 lg:px-6">
       <button

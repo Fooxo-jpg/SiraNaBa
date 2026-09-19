@@ -15,14 +15,14 @@ const CATEGORY_ICON = {
   General: 'fileText',
 };
 
-const TABS = [
-  { id: 'pending', label: 'Pending Review', count: 12 },
-  { id: 'dispatched', label: 'Dispatched', count: 8 },
-  { id: 'completed', label: 'Recently Completed', count: null },
-];
-
 export default function TriageDispatch() {
-  const { stats, tickets, totalUnassigned, coordinationHub, coordinator, hazardGuidelines } = triageDispatch;
+  const { stats, tickets, totalUnassigned, dispatchedCount, technicians, coordinationHub, coordinator, hazardGuidelines } =
+    triageDispatch;
+  const TABS = [
+    { id: 'pending', label: 'Pending Review', count: tickets.length },
+    { id: 'dispatched', label: 'Dispatched', count: dispatchedCount },
+    { id: 'completed', label: 'Recently Completed', count: null },
+  ];
   const [tab, setTab] = useState('pending');
   const [query, setQuery] = useState('');
   const [assignModal, setAssignModal] = useState(null); // ticket object
@@ -45,16 +45,22 @@ export default function TriageDispatch() {
             <p className="text-sm text-ink-700/60">Manage and assign maintenance work orders based on hazard priority.</p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex -space-x-2">
-              {['JM', 'SC', 'MR'].map((initials) => (
-                <div
-                  key={initials}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-sand-100 text-[10px] font-semibold text-ink-700/60"
-                >
-                  {initials}
-                </div>
-              ))}
-            </div>
+            {technicians.length > 0 && (
+              <div className="flex -space-x-2">
+                {technicians.slice(0, 3).map((t) => (
+                  <div
+                    key={t.id}
+                    title={t.name}
+                    className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-sand-100 text-[10px] font-semibold text-ink-700/60"
+                  >
+                    {t.name
+                      .split(' ')
+                      .map((n) => n[0])
+                      .join('')}
+                  </div>
+                ))}
+              </div>
+            )}
             <button className="flex items-center gap-1.5 rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600">
               <Icon name="wrench" size={15} /> Quick Dispatch
             </button>
@@ -180,7 +186,9 @@ export default function TriageDispatch() {
               </div>
             </>
           ) : (
-            <p className="py-10 text-center text-sm text-ink-700/50">No tickets in this view yet.</p>
+            <p className="py-10 text-center text-sm text-ink-700/50">
+              {tab === 'pending' && tickets.length === 0 ? 'No pending work orders.' : 'No tickets in this view yet.'}
+            </p>
           )}
         </Card>
 
@@ -195,6 +203,9 @@ export default function TriageDispatch() {
                 Live Feed
               </span>
             </div>
+            {coordinationHub.length === 0 && (
+              <p className="py-8 text-center text-sm text-ink-700/50">No field updates yet.</p>
+            )}
             <ul className="divide-y divide-black/5">
               {coordinationHub.map((ev) => (
                 <li key={ev.id} className="flex items-start justify-between gap-3 py-3">
@@ -277,7 +288,8 @@ export default function TriageDispatch() {
             </button>
             <button
               onClick={() => setAssignModal(null)}
-              className="rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
+              disabled={technicians.length === 0}
+              className="rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Assign
             </button>
@@ -289,10 +301,16 @@ export default function TriageDispatch() {
           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-700/50">
             Technician
           </span>
-          <select className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400">
-            <option>John Miller — Structural</option>
-            <option>Sarah Chen — General</option>
-            <option>Mike Ross — Plumbing</option>
+          <select
+            disabled={technicians.length === 0}
+            className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400 disabled:bg-sand-50"
+          >
+            {technicians.length === 0 && <option>No technicians available</option>}
+            {technicians.map((t) => (
+              <option key={t.id}>
+                {t.name} — {t.specialty}
+              </option>
+            ))}
           </select>
         </label>
       </Modal>

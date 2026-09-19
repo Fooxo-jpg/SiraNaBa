@@ -119,9 +119,11 @@ export default function IoTEmergency() {
 
                 <Card className="flex flex-col items-center justify-center gap-2 p-10 text-center">
                   <Icon name="chevronLeft" size={20} className="rotate-90 text-ink-700/30" />
-                  <p className="font-semibold text-ink-900">Active Monitoring</p>
+                  <p className="font-semibold text-ink-900">{alerts.length === 0 ? 'No Active Alerts' : 'Active Monitoring'}</p>
                   <p className="max-w-xs text-xs text-ink-700/50">
-                    All IoT protocols are executing automated safety sequences for current sector hazards.
+                    {alerts.length === 0
+                      ? 'Incoming IoT and security alerts will appear here.'
+                      : 'All IoT protocols are executing automated safety sequences for current sector hazards.'}
                   </p>
                 </Card>
               </>
@@ -167,7 +169,7 @@ export default function IoTEmergency() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-ink-700/50">Pwr Stability</span>
-                  <span className="font-semibold text-ink-900">{Math.round(telemetry.powerStability * 100)}%</span>
+                  <span className="font-semibold text-ink-900">{telemetry.powerStability == null ? '—' : `${Math.round(telemetry.powerStability * 100)}%`}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3 border-t border-black/5 pt-2.5">
                   <div>
@@ -176,7 +178,7 @@ export default function IoTEmergency() {
                   </div>
                   <div>
                     <p className="text-xs text-ink-700/50">Latency</p>
-                    <p className="font-mono text-lg font-bold text-ink-900">{telemetry.latencyMs}ms</p>
+                    <p className="font-mono text-lg font-bold text-ink-900">{telemetry.latencyMs == null ? '—' : `${telemetry.latencyMs}ms`}</p>
                   </div>
                 </div>
               </div>
@@ -186,6 +188,9 @@ export default function IoTEmergency() {
               <p className="mb-3 font-semibold text-ink-900">Emergency Personnel</p>
               <p className="mb-3 -mt-2 text-xs text-ink-700/50">Live GPS dispatch status</p>
               <div className="space-y-3">
+                {emergencyPersonnel.length === 0 && (
+                  <p className="py-2 text-center text-xs text-ink-700/50">No personnel on duty.</p>
+                )}
                 {emergencyPersonnel.map((p) => (
                   <div key={p.name} className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5">

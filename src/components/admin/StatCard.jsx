@@ -14,7 +14,7 @@ const DELTA_STYLES = {
   neutral: 'text-ink-700/50',
 };
 
-export default function StatCard({ label, value, delta, tone = 'neutral', icon }) {
+export default function StatCard({ label, value, delta, tone = 'neutral', icon, tag }) {
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -22,6 +22,11 @@ export default function StatCard({ label, value, delta, tone = 'neutral', icon }
           <div className={`flex h-8 w-8 items-center justify-center rounded-md ${TONE_STYLES[tone]}`}>
             <Icon name={icon} size={16} />
           </div>
+        )}
+        {tag && (
+          <span className="rounded bg-sand-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-ink-700/50">
+            {tag}
+          </span>
         )}
       </div>
       <p className="text-xs font-semibold uppercase tracking-wide text-ink-700/50">{label}</p>
