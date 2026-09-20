@@ -1,7 +1,9 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import Icon from '../Icon.jsx';
 import { adminUser } from '../../data/adminMockDb.js';
+import { useSession } from '../../context/SessionContext.jsx';
+import { endpoints } from '../../api/endpoints.js';
 
 const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', icon: 'grid', end: true },
@@ -35,6 +37,33 @@ function NavItem({ to, label, icon, end, onNavigate }) {
   );
 }
 
+function SignOutButton({ onNavigate }) {
+  const navigate = useNavigate();
+  const { clearSession } = useSession();
+
+  const handleSignOut = async () => {
+    onNavigate?.();
+    try {
+      await endpoints.logout();
+    } catch {
+      // Clear local state and go to /login even if the request fails.
+    }
+    clearSession();
+    navigate('/login', { replace: true });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleSignOut}
+      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink-700/70 transition-colors hover:bg-sand-100 hover:text-ink-900"
+    >
+      <Icon name="logout" size={18} />
+      Sign Out
+    </button>
+  );
+}
+
 function SidebarContent({ onNavigate }) {
   return (
     <div className="flex h-full w-full flex-col justify-between">
@@ -63,7 +92,7 @@ function SidebarContent({ onNavigate }) {
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <NavItem to="/login" label="Sign Out" icon="logout" onNavigate={onNavigate} />
+          <SignOutButton onNavigate={onNavigate} />
         </div>
       </div>
     </div>

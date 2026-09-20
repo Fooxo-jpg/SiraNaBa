@@ -164,7 +164,7 @@ export default function Billing() {
                 <span className="flex items-center gap-1">
                   <Icon name="calendar" size={13} /> Due {formatDate(billing.dueDate)}
                 </span>
-                <span className="flex items-center gap-1 text-forest-600">
+                <span className={`flex items-center gap-1 ${billing.autoPayActive ? 'text-forest-600' : 'text-ink-700/50'}`}>
                   <Icon name="check" size={13} /> Auto-pay {billing.autoPayActive ? 'Active' : 'Off'}
                 </span>
               </p>
@@ -185,6 +185,9 @@ export default function Billing() {
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-700/50">
                 Breakdown
               </p>
+              {billing.breakdown.length === 0 && (
+                <p className="text-sm text-ink-700/50">No charges on your account right now.</p>
+              )}
               <ul className="space-y-2.5 text-sm">
                 {billing.breakdown.map((line) => (
                   <li key={line.label} className="flex items-center justify-between">
@@ -204,18 +207,24 @@ export default function Billing() {
                 Active Method
               </p>
               <p className="mb-3 text-xs text-ink-700/50">Primary account for automated billing</p>
-              <div className="flex items-center gap-3 rounded-lg border border-black/5 p-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-sand-100 text-ink-700/60">
-                  <Icon name="card" size={16} />
+              {billing.paymentMethod ? (
+                <div className="flex items-center gap-3 rounded-lg border border-black/5 p-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-md bg-sand-100 text-ink-700/60">
+                    <Icon name="card" size={16} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-ink-900">
+                      {billing.paymentMethod.brand} ending in {billing.paymentMethod.last4}
+                    </p>
+                    <p className="text-xs text-ink-700/50">Expires {billing.paymentMethod.expiry}</p>
+                  </div>
+                  {billing.paymentMethod.isPrimary && <StatusBadge label="Primary" tone="success" />}
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-ink-900">
-                    {billing.paymentMethod.brand} ending in {billing.paymentMethod.last4}
-                  </p>
-                  <p className="text-xs text-ink-700/50">Expires {billing.paymentMethod.expiry}</p>
+              ) : (
+                <div className="rounded-lg border border-dashed border-black/10 bg-sand-50 p-4 text-center text-sm text-ink-700/50">
+                  No payment method on file.
                 </div>
-                {billing.paymentMethod.isPrimary && <StatusBadge label="Primary" tone="success" />}
-              </div>
+              )}
               <div className="mt-3 divide-y divide-black/5 text-sm">
                 <button
                   onClick={() => setModal('manageMethods')}
@@ -246,6 +255,9 @@ export default function Billing() {
                 Detailed Consumption Report
               </button>
             </div>
+            {billing.utilityBreakdowns.length === 0 && (
+              <p className="text-sm text-ink-700/50">No utility usage recorded yet.</p>
+            )}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               {billing.utilityBreakdowns.map((u) => (
                 <div key={u.id} className="rounded-lg border border-black/5 p-4">
@@ -525,6 +537,12 @@ export default function Billing() {
           }
         >
           <div className="space-y-3">
+            {!billing.paymentMethod && (
+              <p className="rounded-lg border border-dashed border-black/10 bg-sand-50 p-4 text-center text-sm text-ink-700/50">
+                No payment methods saved yet.
+              </p>
+            )}
+            {billing.paymentMethod && (
             <div className="flex items-center gap-3 rounded-lg border border-black/5 p-3">
               <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-sand-100 text-ink-700/60">
                 <Icon name="card" size={16} />
@@ -560,6 +578,7 @@ export default function Billing() {
                 </button>
               </div>
             </div>
+            )}
           </div>
           <button
             onClick={() => setModal('addMethod')}

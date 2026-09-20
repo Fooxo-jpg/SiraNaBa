@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import Card from '../components/Card.jsx';
 import Icon from '../components/Icon.jsx';
 import AttachmentGrid from '../components/AttachmentGrid.jsx';
 import { endpoints } from '../api/endpoints.js';
-import { db } from '../data/mockDb.js';
 
 const STEPS = ['Details', 'Location', 'Review'];
 
@@ -23,6 +22,11 @@ export default function SubmitRequest() {
   const [form, setForm] = useState(initialForm);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [categories, setCategories] = useState([]);
+
+  useEffect(() => {
+    endpoints.getTicketCategories().then(setCategories).catch(() => setCategories([]));
+  }, []);
 
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
@@ -121,7 +125,7 @@ export default function SubmitRequest() {
                     className="w-full rounded-lg border border-black/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-forest-400"
                   >
                     <option value="">Select category...</option>
-                    {db.ticketCategories.map((c) => (
+                    {categories.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>

@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import { endpoints } from '../api/endpoints.js';
+import { useSession } from '../context/SessionContext.jsx';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user, refresh } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -12,13 +15,29 @@ export default function Login() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Where to go after signing in: admins always land on the admin side,
+  // tenants go back to where they were headed (or the dashboard).
+  const destinationFor = (role) => {
+    if (role === 'ADMIN') return '/admin';
+    return location.state?.from
+      ? `${location.state.from.pathname}${location.state.from.search || ''}`
+      : '/';
+  };
+
+  // Already signed in (e.g. came back to /login manually)? Just continue on.
+  useEffect(() => {
+    if (user) navigate(destinationFor(user.role), { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   const onSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSubmitting(true);
     try {
-      await endpoints.login(email, password);
-      navigate('/');
+      await endpoints.login(email, password, remember);
+      const me = await refresh();
+      navigate(destinationFor(me.role), { replace: true });
     } catch (err) {
       setError(err.message || 'Sign in failed. Check your credentials and try again.');
     } finally {
@@ -50,41 +69,6 @@ export default function Login() {
           <p className="mt-1 text-sm text-ink-700/60">
             Enter your credentials to access your tenant portal.
           </p>
-        </div>
-
-        {/* Temporary testing shortcuts — no password required */}
-        <div className="mb-6 rounded-lg border border-dashed border-forest-300 bg-forest-50 p-3.5">
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-forest-700">
-            <Icon name="info" size={13} /> Testing Access
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => navigate('/')}
-              className="flex flex-col items-center gap-1 rounded-md border border-forest-200 bg-white py-2.5 text-xs font-semibold text-ink-900 hover:bg-forest-100"
-            >
-              <Icon name="grid" size={16} className="text-forest-600" />
-              Continue as Guest
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/admin')}
-              className="flex flex-col items-center gap-1 rounded-md border border-forest-200 bg-white py-2.5 text-xs font-semibold text-ink-900 hover:bg-forest-100"
-            >
-              <Icon name="shield" size={16} className="text-forest-600" />
-              Continue as Admin
-            </button>
-          </div>
-          <p className="mt-2 text-[10px] leading-relaxed text-forest-700/70">
-            No password needed — jumps straight into the tenant portal or the admin command center
-            for testing.
-          </p>
-        </div>
-
-        <div className="mb-4 flex items-center gap-3 text-xs text-ink-700/40">
-          <span className="h-px flex-1 bg-black/5" />
-          Or sign in with credentials
-          <span className="h-px flex-1 bg-black/5" />
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">

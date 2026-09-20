@@ -36,18 +36,35 @@ src/
   utils/format.js       # currency/date/time formatting helpers
 ```
 
-## Connecting a real backend
+## Backend
 
-The UI never talks to mock data directly — every screen calls `endpoints.*` in
-`src/api/endpoints.js`, which calls the generic `api.get/post/patch/delete` helpers in
-`src/api/client.js`. To go live:
+The mock data layer (`src/data/mockDb.js`, `src/data/mockServer.js`) has been removed.
+Every screen calls `endpoints.*` in `src/api/endpoints.js`, which calls the generic
+`api.get/post/patch/delete` helpers in `src/api/client.js`, which now talk to a real
+Java (Spring Boot) API backed by MongoDB — see **`server/README.md`** for setup.
 
-1. Set `VITE_API_BASE_URL` in a `.env` file (e.g. `VITE_API_BASE_URL=https://api.siranaba.com`).
-2. Implement the REST routes listed in `mockServer.js` on your backend (same paths, same
-   request/response shapes) — `/api/tenant`, `/api/dashboard/summary`, `/api/tickets`,
-   `/api/tickets/:id`, `/api/billing`, `/api/notifications`, `/api/auth/login`.
-3. Remove `src/data/mockDb.js` and `src/data/mockServer.js` once the real API is in place —
-   `client.js` only imports them when `VITE_API_BASE_URL` is unset, so nothing else changes.
+That backend also integrates **Google Gemini** to triage new maintenance tickets
+(assessing severity, a safety note, and an estimated completion time) when a tenant
+submits a request.
+
+Quick start (one command for both):
+
+```bash
+npm install
+cp server/.env.example server/.env   # fill in MONGODB_URI, GEMINI_API_KEY, JWT_SECRET
+npm run dev:all                      # runs Vite + Spring Boot together
+```
+
+See `server/README.md` for MongoDB setup options (Docker, Atlas, or a local
+install) and Gemini API key setup. Prefer to run them separately? `npm run dev`
+(front end) and `npm run server` (backend) still work on their own.
+
+Demo login seeded on first backend run: `alex.rivers@siranaba.com` / `Password123!`
+
+Note: the **admin portal** (`src/pages/admin/*`) still reads from `src/data/adminMockDb.js`
+directly rather than through `endpoints.js` — it was never wired to the API layer in this
+project, so it's unaffected by the backend above. Ask for it to be wired up too if you want
+the admin screens backed by the same API.
 
 ## Responsive behavior
 

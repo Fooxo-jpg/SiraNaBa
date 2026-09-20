@@ -1,7 +1,8 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import Icon from './Icon.jsx';
 import { useSession } from '../context/SessionContext.jsx';
+import { endpoints } from '../api/endpoints.js';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: 'grid', end: true },
@@ -27,6 +28,34 @@ function NavItem({ to, label, icon, end, onNavigate }) {
       <Icon name={icon} size={18} />
       {label}
     </NavLink>
+  );
+}
+
+function SignOutButton({ onNavigate }) {
+  const navigate = useNavigate();
+  const { clearSession } = useSession();
+
+  const handleSignOut = async () => {
+    onNavigate?.();
+    try {
+      await endpoints.logout();
+    } catch {
+      // Even if the request fails, clear local state and send them to
+      // /login - RequireAuth will re-check the cookie on next load anyway.
+    }
+    clearSession();
+    navigate('/login', { replace: true });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleSignOut}
+      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink-700/70 transition-colors hover:bg-sand-100 hover:text-ink-900"
+    >
+      <Icon name="logout" size={18} />
+      Sign Out
+    </button>
   );
 }
 
@@ -71,7 +100,7 @@ function SidebarContent({ onNavigate }) {
           </div>
         </NavLink>
         <div className="flex flex-col gap-1">
-          <NavItem to="/login" label="Sign Out" icon="logout" onNavigate={onNavigate} />
+          <SignOutButton onNavigate={onNavigate} />
         </div>
       </div>
     </div>

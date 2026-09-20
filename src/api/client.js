@@ -1,16 +1,10 @@
-// Central API client. Every request funnels through here so swapping the
-// mock layer for a real backend only means changing BASE_URL and removing
-// the mock fallback below.
+// Central API client. Every request funnels through here. Points at the
+// Java backend in /server by default - override with VITE_API_BASE_URL in
+// a .env file if it runs somewhere else (see server/README.md).
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
-const USE_MOCKS = !BASE_URL; // falls back to in-memory mock data when unset
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 async function request(path, options = {}) {
-  if (USE_MOCKS) {
-    const { mockRequest } = await import('../data/mockServer.js');
-    return mockRequest(path, options);
-  }
-
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     credentials: 'include',
