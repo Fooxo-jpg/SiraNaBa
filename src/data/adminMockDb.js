@@ -72,7 +72,10 @@ export const staffManagement = {
     { label: 'Hydraulic & Plumbing', specialties: ['Plumber'], color: 'bg-cyan-500' },
     { label: 'General Facility Repair', specialties: ['General Repair', 'Cleaner'], color: 'bg-forest-400' },
   ],
-  staff: [], // see StaffManagement.jsx for the record shape
+  // Staff roster now lives in the "staff" MongoDB collection (see
+  // src/api/endpoints.js: getStaff/createStaff/updateStaff/removeStaff).
+  // StaffManagement.jsx fetches it at load time; nothing is hardcoded here.
+  staff: [], // record shape: { id, staffCode, name, specialty, availability, workload, tickets, email, phone }
   incidentReadiness: null, // percentage number once available
   operationalStatus: [
     { icon: 'shield', label: 'Security Clearance', detail: PLACEHOLDER, tone: 'neutral' },

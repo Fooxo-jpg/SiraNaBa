@@ -1,5 +1,6 @@
 package com.siranaba.backend.controller;
 
+import com.siranaba.backend.dto.ChangePasswordRequest;
 import com.siranaba.backend.dto.LoginRequest;
 import com.siranaba.backend.dto.LoginResponse;
 import com.siranaba.backend.dto.MeResponse;
@@ -45,5 +46,16 @@ public class AuthController {
     @PostMapping("/logout")
     public void logout(HttpServletResponse response) {
         authService.logout(response);
+    }
+
+    /** Account Settings -> Change Password. */
+    @PostMapping("/change-password")
+    public void changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof AuthenticatedUser user) {
+            authService.changePassword(user.userId(), request);
+            return;
+        }
+        throw new ApiException(HttpStatus.UNAUTHORIZED, "You need to sign in to do that.");
     }
 }

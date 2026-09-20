@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Layout from '../components/Layout.jsx';
 import Card from '../components/Card.jsx';
 import Icon from '../components/Icon.jsx';
@@ -6,8 +6,19 @@ import Modal from '../components/Modal.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import DataTable from '../components/DataTable.jsx';
 import { ProgressBar, LoadingState, ErrorState } from '../components/Common.jsx';
+import { useSession } from '../context/SessionContext.jsx';
 import { endpoints } from '../api/endpoints.js';
-import { formatCurrency, formatDate } from '../utils/format.js';
+import { formatPhp, formatDate } from '../utils/format.js';
+import { NOTIFICATIONS_CHANGED } from '../components/Layout.jsx';
+import {
+  AddMethodModal,
+  ManageMethodsModal,
+  PayModal,
+  ReceiptModal,
+  MethodLogo,
+  methodTitle,
+  methodSubtitle,
+} from '../components/billing/PaymentParts.jsx';
 
 const UTILITY_ICON = { electricity: 'bolt', water: 'droplet', internet: 'wifi', facility: 'shield' };
 const UTILITY_TONE = {
@@ -19,28 +30,10 @@ const UTILITY_TONE = {
 
 const TABS = ['All Transactions', 'Rent Only', 'Utilities', 'Failed'];
 
-const PAYMENT_PLANS = [
-  {
-    id: 'full',
-    title: 'Pay in Full',
-    description: 'One payment for the full balance due on the due date.',
-  },
-  {
-    id: 'split2',
-    title: 'Split into 2 Payments',
-    description: 'Half of the balance now, the remainder two weeks before the due date.',
-  },
-  {
-    id: 'split3',
-    title: 'Split into 3 Payments',
-    description: 'Balance divided evenly across three payments over the billing cycle.',
-  },
-];
-
 const PAYMENT_LIMITS = [
-  { icon: 'clock', label: 'Daily Transaction Limit', value: '$5,000.00' },
-  { icon: 'calendar', label: 'Monthly Transaction Limit', value: '$20,000.00' },
-  { icon: 'card', label: 'Per-Transaction Limit', value: '$10,000.00' },
+  { icon: 'clock', label: 'Daily Transaction Limit', value: '₱5,000.00' },
+  { icon: 'calendar', label: 'Monthly Transaction Limit', value: '₱20,000.00' },
+  { icon: 'card', label: 'Per-Transaction Limit', value: '₱10,000.00' },
 ];
 
 const BILLING_FAQS = [
@@ -58,7 +51,7 @@ const BILLING_FAQS = [
   },
   {
     q: 'Can I change my payment method at any time?',
-    a: "Yes. Open Manage Payment Methods to add a new card or bank account, set a different primary method, or remove one you no longer use.",
+    a: "Yes. Open Manage Payment Methods to add a card, a GCash or Maya wallet, or an online banking account, set a different primary method, or remove one you no longer use.",
   },
   {
     q: 'How are utility charges calculated?',
@@ -86,14 +79,14 @@ function AccordionItem({ question, answer, open, onToggle }) {
 }
 
 export default function Billing() {
+  const { tenant } = useSession();
   const [billing, setBilling] = useState(null);
   const [status, setStatus] = useState('loading');
   const [tab, setTab] = useState('All Transactions');
   const [modal, setModal] = useState(null);
   const closeModal = () => setModal(null);
 
-  const [selectedPlan, setSelectedPlan] = useState('full');
-  const [setAsPrimary, setSetAsPrimary] = useState(false);
+  const [receipt, setReceipt] = useState(null);
   const [openFaq, setOpenFaq] = useState(0);
 
   const load = () => {
@@ -108,6 +101,21 @@ export default function Billing() {
   };
 
   useEffect(load, []);
+
+  // Balance, due date and payments can be changed from the admin side. The tenant
+  // record is re-synced in the background (SessionContext); when it changes, quietly
+  // refresh this page's data too. The first run is the mount, handled above.
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    endpoints.getBilling().then(setBilling).catch(() => {});
+  }, [tenant]);
+
+  const methods = billing?.paymentMethods || [];
+  const activeMethod = methods.find((m) => m.isPrimary) || methods[0];
 
   const filteredTransactions = billing
     ? billing.transactions.filter((t) => {
@@ -153,12 +161,15 @@ export default function Billing() {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="p-6">
-              <StatusBadge label="Upcoming Payment" tone="progress" />
+              <StatusBadge
+                label={billing.currentBalanceDue <= 0 ? 'All Paid' : 'Upcoming Payment'}
+                tone={billing.currentBalanceDue <= 0 ? 'success' : 'progress'}
+              />
               <p className="mt-3 text-xs font-medium uppercase tracking-wide text-ink-700/50">
                 Current Balance Due
               </p>
               <p className="text-3xl font-bold text-ink-900">
-                {formatCurrency(billing.currentBalanceDue)}
+                {formatPhp(billing.currentBalanceDue)}
               </p>
               <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-700/50">
                 <span className="flex items-center gap-1">
@@ -168,15 +179,13 @@ export default function Billing() {
                   <Icon name="check" size={13} /> Auto-pay {billing.autoPayActive ? 'Active' : 'Off'}
                 </span>
               </p>
-              <div className="mt-4 flex gap-3">
-                <button className="flex-1 rounded-md bg-forest-500 px-3 py-2 text-sm font-semibold text-white hover:bg-forest-600">
-                  Pay Total Now
-                </button>
+              <div className="mt-4">
                 <button
-                  onClick={() => setModal('editPlan')}
-                  className="flex-1 rounded-md border border-black/10 px-3 py-2 text-sm font-medium hover:bg-sand-100"
+                  onClick={() => setModal('pay')}
+                  disabled={billing.currentBalanceDue <= 0}
+                  className="w-full rounded-md bg-forest-500 px-3 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Edit Payment Plan
+                  {billing.currentBalanceDue <= 0 ? 'No Balance Due' : 'Pay Total Now'}
                 </button>
               </div>
             </Card>
@@ -192,7 +201,7 @@ export default function Billing() {
                 {billing.breakdown.map((line) => (
                   <li key={line.label} className="flex items-center justify-between">
                     <span className="text-ink-700/70">{line.label}</span>
-                    <span className="font-semibold text-ink-900">{formatCurrency(line.amount)}</span>
+                    <span className="font-semibold text-ink-900">{formatPhp(line.amount)}</span>
                   </li>
                 ))}
               </ul>
@@ -207,18 +216,13 @@ export default function Billing() {
                 Active Method
               </p>
               <p className="mb-3 text-xs text-ink-700/50">Primary account for automated billing</p>
-              {billing.paymentMethod ? (
+              {activeMethod ? (
                 <div className="flex items-center gap-3 rounded-lg border border-black/5 p-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-md bg-sand-100 text-ink-700/60">
-                    <Icon name="card" size={16} />
+                  <MethodLogo method={activeMethod} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-ink-900">{methodTitle(activeMethod)}</p>
+                    <p className="truncate text-xs text-ink-700/50">{methodSubtitle(activeMethod)}</p>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-ink-900">
-                      {billing.paymentMethod.brand} ending in {billing.paymentMethod.last4}
-                    </p>
-                    <p className="text-xs text-ink-700/50">Expires {billing.paymentMethod.expiry}</p>
-                  </div>
-                  {billing.paymentMethod.isPrimary && <StatusBadge label="Primary" tone="success" />}
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-black/10 bg-sand-50 p-4 text-center text-sm text-ink-700/50">
@@ -320,11 +324,14 @@ export default function Billing() {
                   render: (row) => (
                     <div>
                       <p className="font-medium text-ink-900">{row.title}</p>
-                      <p className="text-xs text-ink-700/50">{formatDate(row.date)}</p>
+                      <p className="text-xs text-ink-700/50">
+                        {formatDate(row.date)}
+                        {row.paymentMode ? ` · ${row.paymentMode}` : ''}
+                      </p>
                     </div>
                   ),
                 },
-                { key: 'amount', header: 'Amount', render: (row) => formatCurrency(row.amount) },
+                { key: 'amount', header: 'Amount', render: (row) => formatPhp(row.amount) },
                 { key: 'status', header: 'Status', render: (row) => <StatusBadge label={row.status} /> },
               ]}
               rows={filteredTransactions}
@@ -396,197 +403,35 @@ export default function Billing() {
           </div>
         </Modal>
 
-        {/* Add Payment Method */}
-        <Modal
+        <AddMethodModal
           open={modal === 'addMethod'}
           onClose={closeModal}
-          title="Add Payment Method"
-          footer={
-            <>
-              <button
-                onClick={closeModal}
-                className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={closeModal}
-                className="rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
-              >
-                Save Payment Method
-              </button>
-            </>
-          }
-        >
-          <div className="space-y-4">
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-ink-700/60">Card Number</span>
-              <input
-                type="text"
-                placeholder="1234 5678 9012 3456"
-                className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-ink-700/60">Name on Card</span>
-              <input
-                type="text"
-                placeholder="Juan Dela Cruz"
-                className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400"
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-4">
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-ink-700/60">Expiry Date</span>
-                <input
-                  type="text"
-                  placeholder="MM/YY"
-                  className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-ink-700/60">CVV</span>
-                <input
-                  type="text"
-                  placeholder="•••"
-                  className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400"
-                />
-              </label>
-            </div>
-            <label className="flex items-center gap-2 text-sm text-ink-700/70">
-              <input
-                type="checkbox"
-                checked={setAsPrimary}
-                onChange={(e) => setSetAsPrimary(e.target.checked)}
-                className="h-4 w-4 rounded border-black/20 text-forest-600 focus:ring-forest-400"
-              />
-              Set as primary payment method
-            </label>
-            <p className="flex items-center gap-1.5 text-xs text-ink-700/40">
-              <Icon name="lock" size={13} /> Your payment details are encrypted and processed securely.
-            </p>
-          </div>
-        </Modal>
+          onSaved={setBilling}
+          defaultName={tenant ? `${tenant.firstName} ${tenant.lastName}`.trim() : ''}
+        />
 
-        {/* Edit Payment Plan */}
-        <Modal
-          open={modal === 'editPlan'}
-          onClose={closeModal}
-          title="Edit Payment Plan"
-          footer={
-            <>
-              <button
-                onClick={closeModal}
-                className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={closeModal}
-                className="rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
-              >
-                Save Changes
-              </button>
-            </>
-          }
-        >
-          <p className="mb-4 text-sm text-ink-700/60">
-            Choose how you'd like to pay your{' '}
-            <span className="font-semibold text-ink-900">{formatCurrency(billing.currentBalanceDue)}</span> balance
-            due {formatDate(billing.dueDate)}.
-          </p>
-          <div className="space-y-2.5">
-            {PAYMENT_PLANS.map((plan) => (
-              <button
-                key={plan.id}
-                onClick={() => setSelectedPlan(plan.id)}
-                className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
-                  selectedPlan === plan.id
-                    ? 'border-forest-500 bg-forest-50'
-                    : 'border-black/10 hover:bg-sand-100'
-                }`}
-              >
-                <span
-                  className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border-2 ${
-                    selectedPlan === plan.id ? 'border-forest-500' : 'border-black/20'
-                  }`}
-                >
-                  {selectedPlan === plan.id && <span className="h-2 w-2 rounded-full bg-forest-500" />}
-                </span>
-                <span>
-                  <span className="block text-sm font-semibold text-ink-900">{plan.title}</span>
-                  <span className="block text-xs text-ink-700/50">{plan.description}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </Modal>
-
-        {/* Manage Payment Methods */}
-        <Modal
+        <ManageMethodsModal
           open={modal === 'manageMethods'}
           onClose={closeModal}
-          title="Manage Payment Methods"
-          footer={
-            <button
-              onClick={closeModal}
-              className="rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
-            >
-              Done
-            </button>
-          }
-        >
-          <div className="space-y-3">
-            {!billing.paymentMethod && (
-              <p className="rounded-lg border border-dashed border-black/10 bg-sand-50 p-4 text-center text-sm text-ink-700/50">
-                No payment methods saved yet.
-              </p>
-            )}
-            {billing.paymentMethod && (
-            <div className="flex items-center gap-3 rounded-lg border border-black/5 p-3">
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-sand-100 text-ink-700/60">
-                <Icon name="card" size={16} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-ink-900">
-                  {billing.paymentMethod.brand} ending in {billing.paymentMethod.last4}
-                </p>
-                <p className="text-xs text-ink-700/50">Expires {billing.paymentMethod.expiry}</p>
-              </div>
-              <div className="flex flex-shrink-0 items-center gap-1">
-                {billing.paymentMethod.isPrimary ? (
-                  <StatusBadge label="Primary" tone="success" />
-                ) : (
-                  <button
-                    aria-label="Set as primary"
-                    className="rounded-full p-1.5 text-ink-700/50 hover:bg-sand-100 hover:text-forest-600"
-                  >
-                    <Icon name="star" size={15} />
-                  </button>
-                )}
-                <button
-                  aria-label="Edit payment method"
-                  className="rounded-full p-1.5 text-ink-700/50 hover:bg-sand-100 hover:text-forest-600"
-                >
-                  <Icon name="pencil" size={15} />
-                </button>
-                <button
-                  aria-label="Remove payment method"
-                  className="rounded-full p-1.5 text-ink-700/50 hover:bg-sand-100 hover:text-status-high"
-                >
-                  <Icon name="trash" size={15} />
-                </button>
-              </div>
-            </div>
-            )}
-          </div>
-          <button
-            onClick={() => setModal('addMethod')}
-            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-black/15 py-2.5 text-sm font-medium text-forest-600 hover:bg-forest-50"
-          >
-            <Icon name="plus" size={14} /> Add New Payment Method
-          </button>
-        </Modal>
+          methods={methods}
+          onChanged={setBilling}
+          onAdd={() => setModal('addMethod')}
+        />
+
+        <PayModal
+          open={modal === 'pay'}
+          onClose={closeModal}
+          amount={billing.currentBalanceDue}
+          methods={methods}
+          onPaid={(r) => {
+            closeModal();
+            setReceipt(r);
+            endpoints.getBilling().then(setBilling).catch(() => {});
+            window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+          }}
+        />
+
+        <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />
 
         {/* View Payment Limits */}
         <Modal open={modal === 'limits'} onClose={closeModal} title="View Payment Limits">

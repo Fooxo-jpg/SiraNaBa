@@ -15,11 +15,22 @@ public class AppProperties {
     private final Jwt jwt = new Jwt();
     private final Gemini gemini = new Gemini();
     private final Seed seed = new Seed();
+    private final Mail mail = new Mail();
+    private String portalUrl = "http://localhost:5173/login";
 
     public Cors getCors() { return cors; }
     public Jwt getJwt() { return jwt; }
     public Gemini getGemini() { return gemini; }
     public Seed getSeed() { return seed; }
+    public Mail getMail() { return mail; }
+    public String getPortalUrl() { return portalUrl; }
+    public void setPortalUrl(String portalUrl) { this.portalUrl = portalUrl; }
+
+    public static class Mail {
+        private String from = "no-reply@siranaba.com";
+        public String getFrom() { return from; }
+        public void setFrom(String from) { this.from = from; }
+    }
 
     public static class Cors {
         private String allowedOrigins = "http://localhost:5173";

@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { endpoints } from '../api/endpoints.js';
+import { useAutoRefresh } from '../utils/useAutoRefresh.js';
 
 const SessionContext = createContext(null);
 
@@ -51,6 +52,26 @@ export function SessionProvider({ children }) {
     setTenant(null);
     setError('Signed out');
   }, []);
+
+  // The admin can edit this tenant's record (name, email, phone, balance...) or
+  // remove the account. Quietly re-read it now and then so the portal reflects
+  // that without a reload. Unlike refresh(), this never flips `loading`, so it
+  // won't blank the page the tenant is on.
+  const syncTenant = useCallback(async () => {
+    try {
+      const fresh = await endpoints.getTenant();
+      setTenant((prev) => (JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh));
+    } catch (err) {
+      // Account removed by an admin, or the session ended: send them to sign-in.
+      // Anything else (offline, server hiccup) is ignored and retried next tick.
+      if ([401, 403, 404].includes(err.status)) {
+        endpoints.logout().catch(() => {});
+        clearSession();
+      }
+    }
+  }, [clearSession]);
+
+  useAutoRefresh(syncTenant, { enabled: !!user && user.role !== 'ADMIN' && !!tenant });
 
   return (
     <SessionContext.Provider value={{ user, tenant, loading, error, refresh, clearSession }}>

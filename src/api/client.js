@@ -13,7 +13,9 @@ async function request(path, options = {}) {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || `Request failed: ${res.status}`);
+    const err = new Error(body.message || `Request failed: ${res.status}`);
+    err.status = res.status; // lets callers tell "signed out / removed" (401/404) from a network blip
+    throw err;
   }
   return res.status === 204 ? null : res.json();
 }

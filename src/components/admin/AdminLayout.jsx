@@ -1,19 +1,26 @@
-import React, { useState } from 'react';
-import AdminSidebar from './AdminSidebar.jsx';
-import AdminTopbar from './AdminTopbar.jsx';
+import React from 'react';
+import AppShell from '../AppShell.jsx';
+import PageHeader from '../nav/PageHeader.jsx';
+import { adminUser } from '../../data/adminMockDb.js';
+
+const NAV_ITEMS = [
+  { to: '/admin', label: 'Dashboard', icon: 'grid', end: true },
+  { to: '/admin/triage', label: 'Triage & Dispatch', icon: 'ticket' },
+  { to: '/admin/iot', label: 'IoT & Emergency', icon: 'wifi' },
+  { to: '/admin/financial', label: 'Tenant & Financial', icon: 'card' },
+  { to: '/admin/staff', label: 'Staff Management', icon: 'users' },
+  { to: '/admin/config', label: 'Configuration', icon: 'settings' },
+];
 
 export default function AdminLayout({ crumb, children }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-
   return (
-    <div className="flex h-screen overflow-hidden bg-sand-50">
-      <AdminSidebar mobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <AdminTopbar crumb={crumb} onOpenMenu={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto thin-scrollbar px-4 py-6 lg:px-8">
-          <div className="mx-auto w-full max-w-[1600px]">{children}</div>
-        </main>
-      </div>
-    </div>
+    <AppShell navItems={NAV_ITEMS} brandIcon="shield">
+      <PageHeader
+        crumb={crumb}
+        user={{ name: adminUser.name, sub: 'Admin Portal' }}
+        searchPlaceholder="Search systems, tenants..."
+      />
+      {children}
+    </AppShell>
   );
 }

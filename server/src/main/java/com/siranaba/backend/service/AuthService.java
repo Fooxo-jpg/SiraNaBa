@@ -1,5 +1,6 @@
 package com.siranaba.backend.service;
 
+import com.siranaba.backend.dto.ChangePasswordRequest;
 import com.siranaba.backend.dto.LoginRequest;
 import com.siranaba.backend.dto.LoginResponse;
 import com.siranaba.backend.exception.ApiException;
@@ -45,5 +46,24 @@ public class AuthService {
 
     public void logout(HttpServletResponse response) {
         cookieUtil.clearAuthCookie(response);
+    }
+
+    /** Account Settings -> Change Password. Requires the current password and a matching confirmation. */
+    public void changePassword(String userId, ChangePasswordRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "You need to sign in to do that."));
+
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Current password is incorrect.");
+        }
+        if (!request.newMatchesConfirm()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "New password and confirmation do not match.");
+        }
+        if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "New password must be different from your current password.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
     }
 }

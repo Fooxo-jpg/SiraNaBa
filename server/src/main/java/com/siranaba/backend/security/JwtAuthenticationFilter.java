@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -54,7 +55,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Optional<User> user = userRepository.findById(userId);
                 user.ifPresent(u -> {
                     AuthenticatedUser principal = new AuthenticatedUser(u.getId(), u.getEmail(), u.getTenantId(), u.getRole());
-                    var auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+                    var auth = new UsernamePasswordAuthenticationToken(
+                            principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + u.getRole())));
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 });
             } catch (JwtException | IllegalArgumentException ex) {

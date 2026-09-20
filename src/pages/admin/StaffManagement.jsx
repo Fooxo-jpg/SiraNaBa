@@ -1,10 +1,11 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import StatCard from '../../components/admin/StatCard.jsx';
 import Card from '../../components/Card.jsx';
 import Icon from '../../components/Icon.jsx';
 import Modal from '../../components/Modal.jsx';
 import { staffManagement } from '../../data/adminMockDb.js';
+import { endpoints } from '../../api/endpoints.js';
 
 const PAGE_SIZE = 8;
 
@@ -25,7 +26,7 @@ const AVAILABILITY = {
 const inputCls =
   'w-full rounded-md border border-black/10 bg-sand-50 px-3 py-2 text-sm outline-none focus:border-forest-400';
 
-const EMPTY_FORM = { name: '', specialty: 'Electrician', coverage: '', phone: '' };
+const EMPTY_FORM = { name: '', specialty: 'Electrician', phone: '' };
 
 function loadColor(pct) {
   if (pct >= 75) return 'bg-status-high';
@@ -47,7 +48,9 @@ function Avatar({ name }) {
 
 export default function StaffManagement() {
   const { specialties, capacityGroups, operationalStatus, version, incidentReadiness } = staffManagement;
-  const [staff, setStaff] = useState(staffManagement.staff);
+  const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [query, setQuery] = useState('');
   const [specialty, setSpecialty] = useState('All Specialties');
   const [availability, setAvailability] = useState('All');
@@ -58,10 +61,29 @@ export default function StaffManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
 
   const [dispatchPick, setDispatchPick] = useState(null);
   const [smsSent, setSmsSent] = useState(false);
   const matrixRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    endpoints
+      .getStaff()
+      .then((data) => {
+        if (!cancelled) setStaff(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err.message || 'Could not load staff.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const online = staff.filter((s) => s.availability === 'online');
   const highCapacity = staff.filter((s) => s.workload >= 75).length;
@@ -79,7 +101,7 @@ export default function StaffManagement() {
     const q = query.trim().toLowerCase();
     return staff.filter(
       (s) =>
-        (!q || [s.name, s.id, s.coverage, s.specialty].some((v) => v.toLowerCase().includes(q))) &&
+        (!q || [s.name, s.staffCode, s.specialty].some((v) => v.toLowerCase().includes(q))) &&
         (specialty === 'All Specialties' || s.specialty === specialty) &&
         (availability === 'All' || s.availability === availability)
     );
@@ -106,44 +128,52 @@ export default function StaffManagement() {
     setModalOpen(true);
   };
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     const next = {};
     if (!form.name.trim()) next.name = 'Full name is required';
-    if (!form.coverage.trim()) next.coverage = 'Enter at least one coverage area';
     setErrors(next);
     if (Object.keys(next).length) return;
 
-    const n = staff.reduce((m, s) => Math.max(m, parseInt(s.id.slice(3), 10)), 200) + 1;
-    const parts = form.name.trim().split(/\s+/);
-    setStaff((list) => [
-      ...list,
-      {
-        id: `ST-${n}`,
+    setSubmitting(true);
+    try {
+      const created = await endpoints.createStaff({
         name: form.name.trim(),
         specialty: form.specialty,
-        availability: 'offline',
-        coverage: form.coverage.trim(),
-        coverageNote: 'Single Zone',
-        workload: 0,
-        tickets: 0,
-        email: `${parts[0][0].toLowerCase()}.${parts[parts.length - 1].toLowerCase()}@siranaba.com`,
-        phone: form.phone.trim() || '—',
-      },
-    ]);
-    setModalOpen(false);
+        phone: form.phone.trim(),
+      });
+      setStaff((list) => [...list, created]);
+      setModalOpen(false);
+    } catch (err) {
+      setErrors({ name: err.message || 'Could not add staff member.' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const removeStaff = (id) => {
-    setStaff((list) => list.filter((s) => s.id !== id));
+  const removeStaff = async (id) => {
     setMenuId(null);
+    const prev = staff;
+    setStaff((list) => list.filter((s) => s.id !== id));
+    try {
+      await endpoints.removeStaff(id);
+    } catch (err) {
+      setStaff(prev); // roll back if the delete failed server-side
+    }
   };
 
-  const toggleAvailability = (id) => {
+  const toggleAvailability = async (id) => {
+    setMenuId(null);
+    const prev = staff;
     setStaff((list) =>
       list.map((s) => (s.id === id ? { ...s, availability: s.availability === 'online' ? 'offline' : 'online' } : s))
     );
-    setMenuId(null);
+    try {
+      const updated = await endpoints.toggleStaffAvailability(id);
+      setStaff((list) => list.map((s) => (s.id === id ? updated : s)));
+    } catch (err) {
+      setStaff(prev); // roll back if the update failed server-side
+    }
   };
 
   const findTech = () => {
@@ -191,7 +221,7 @@ export default function StaffManagement() {
               <input
                 value={query}
                 onChange={(e) => resetPage(setQuery)(e.target.value)}
-                placeholder="Search staff by name, ID, or coverage area..."
+                placeholder="Search staff by name, ID, or specialty..."
                 className="w-full rounded-lg border border-black/10 py-2 pl-8 pr-3 text-sm outline-none focus:border-forest-400"
               />
             </label>
@@ -237,13 +267,12 @@ export default function StaffManagement() {
           )}
 
           <div className="overflow-x-auto thin-scrollbar">
-            <table className="w-full min-w-[860px] text-sm">
+            <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="text-left text-xs font-semibold uppercase tracking-wide text-ink-700/40">
                   <th className="pb-2 pr-3">Professional Identity</th>
                   <th className="pb-2 pr-3">Specialty & Role</th>
                   <th className="pb-2 pr-3">Availability</th>
-                  <th className="pb-2 pr-3">Coverage Area</th>
                   <th className="pb-2 pr-3">Workload Telemetry</th>
                   <th className="w-8 pb-2" />
                 </tr>
@@ -258,7 +287,7 @@ export default function StaffManagement() {
                           <Avatar name={s.name} />
                           <span className="leading-tight">
                             <span className="block font-semibold text-ink-900">{s.name}</span>
-                            <span className="block font-mono text-[11px] text-ink-700/50">{s.id}</span>
+                            <span className="block font-mono text-[11px] text-ink-700/50">{s.staffCode}</span>
                           </span>
                         </span>
                         <span className="mt-1 flex flex-col text-[11px] text-ink-700/50">
@@ -277,12 +306,6 @@ export default function StaffManagement() {
                           <span className={`h-2 w-2 rounded-full ${av.dot}`} /> {av.label}
                         </span>
                         <span className={`mt-0.5 block pl-3.5 text-[10px] font-bold ${av.tagCls}`}>{av.tag}</span>
-                      </td>
-                      <td className="py-3 pr-3 text-xs">
-                        <span className="flex items-center gap-1.5 font-medium text-ink-900">
-                          <Icon name="mapPin" size={12} className="text-ink-700/40" /> {s.coverage}
-                        </span>
-                        <span className="block pl-[18px] text-ink-700/50">{s.coverageNote}</span>
                       </td>
                       <td className="py-3 pr-3">
                         <div className="w-40">
@@ -322,7 +345,13 @@ export default function StaffManagement() {
                 })}
               </tbody>
             </table>
-            {rows.length === 0 && (
+            {loading && (
+              <p className="py-8 text-center text-sm text-ink-700/50">Loading staff…</p>
+            )}
+            {!loading && loadError && (
+              <p className="py-8 text-center text-sm text-status-high">{loadError}</p>
+            )}
+            {!loading && !loadError && rows.length === 0 && (
               <p className="py-8 text-center text-sm text-ink-700/50">
                 {empty ? 'No staff registered yet.' : 'No staff match this filter.'}
               </p>
@@ -419,7 +448,7 @@ export default function StaffManagement() {
                   ) : (
                     <>
                       <span className="font-semibold">{dispatchPick.name}</span> ({dispatchPick.specialty}) is the best
-                      match: {dispatchPick.workload}% workload, {dispatchPick.coverage}.
+                      match: {dispatchPick.workload}% workload.
                     </>
                   )}
                 </p>
@@ -462,8 +491,13 @@ export default function StaffManagement() {
             <button onClick={() => setModalOpen(false)} className="rounded-md px-4 py-2 text-sm font-medium hover:bg-sand-100">
               Cancel
             </button>
-            <button type="submit" form="add-staff" className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600">
-              Add Staff Member
+            <button
+              type="submit"
+              form="add-staff"
+              disabled={submitting}
+              className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:opacity-60"
+            >
+              {submitting ? 'Adding…' : 'Add Staff Member'}
             </button>
           </>
         }
@@ -485,14 +519,9 @@ export default function StaffManagement() {
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-semibold">Contact Number</span>
-              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 (555) 000-0000" className={inputCls} />
+              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+63 9XX XXX XXXX" className={inputCls} />
             </label>
           </div>
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold">Coverage Area</span>
-            <input value={form.coverage} onChange={(e) => setForm({ ...form, coverage: e.target.value })} placeholder="e.g. Building A, Parking Lot" className={inputCls} />
-            {errors.coverage && <span className="mt-1 block text-xs text-status-high">{errors.coverage}</span>}
-          </label>
         </form>
       </Modal>
     </AdminLayout>

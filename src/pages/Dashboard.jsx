@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import Card from '../components/Card.jsx';
@@ -27,10 +27,20 @@ export default function Dashboard() {
 
   useEffect(load, []);
 
-  const unreadCount = 3; // sourced from notifications endpoint in Notifications page
+  // SessionContext re-reads the tenant record in the background; when it changes
+  // (e.g. an admin marked rent as paid) refresh the summary too - quietly, without
+  // flipping back to the loading state. The first run is the mount, handled above.
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    endpoints.getDashboardSummary().then(setSummary).catch(() => {});
+  }, [tenant]);
 
   return (
-    <Layout unreadCount={unreadCount}>
+    <Layout>
       {status === 'loading' && <LoadingState label="Loading your dashboard…" />}
       {status === 'error' && <ErrorState message="We couldn't load your dashboard." onRetry={load} />}
 

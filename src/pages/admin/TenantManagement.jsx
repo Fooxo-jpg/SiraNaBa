@@ -1,19 +1,37 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import StatCard from '../../components/admin/StatCard.jsx';
 import Card from '../../components/Card.jsx';
 import Icon from '../../components/Icon.jsx';
 import Modal from '../../components/Modal.jsx';
 import StatusBadge from '../../components/StatusBadge.jsx';
-import { formatCurrency, formatDate } from '../../utils/format.js';
+import { formatPhp, formatDate, formatRelativeTime, formatPaidAt } from '../../utils/format.js';
+import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
 import { tenantManagement } from '../../data/adminMockDb.js';
+import { endpoints } from '../../api/endpoints.js';
+import { MethodLogo, methodTitle, methodSubtitle } from '../../components/billing/PaymentParts.jsx';
+import { useTenantRegistry } from '../../context/TenantRegistryContext.jsx';
+import { TOWERS, UNIT_TYPES, RENT_BY_TYPE, ALL_ROOMS, levelByKey, roomById, vacantRooms } from '../../data/buildingData.js';
 
 const ACTIVITY_TONES = {
   success: 'bg-status-successBg text-status-success',
   progress: 'bg-status-progressBg text-status-progress',
 };
 
-const EMPTY_FORM = { name: '', unit: '', type: 'Residential', rent: '', email: '', phone: '' };
+// `type`, `tower` and `roomId` come from the building map (buildingData.js), so a
+// tenant can only be assigned to a room that really exists and is still vacant.
+const todayISO = () => new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD
+
+const EMPTY_FORM = () => ({
+  name: '',
+  type: UNIT_TYPES[0],
+  tower: TOWERS[0].id,
+  roomId: '',
+  leaseStart: todayISO(),
+  email: '',
+  phone: '',
+});
 
 const inputCls =
   'w-full rounded-md border border-black/10 bg-sand-50 px-3 py-2 text-sm outline-none focus:border-forest-400';
@@ -26,15 +44,10 @@ function initials(name) {
     .join('');
 }
 
-function nextMonthFirst() {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString().slice(0, 10);
-}
-
 function exportCsv(rows) {
-  const header = ['ID', 'Name', 'Unit', 'Type', 'Email', 'Phone', 'Occupancy', 'Rent', 'Payment', 'Due Date', 'Account'];
+  const header = ['ID', 'Name', 'Tower', 'Unit', 'Unit Type', 'Email', 'Phone', 'Occupancy', 'Lease Start', 'Monthly Rent (PHP)', 'Payment', 'Due Date', 'Account'];
   const lines = rows.map((t) =>
-    [t.id, t.name, t.unit, t.type, t.email, t.phone, t.occupancy, t.rent, t.payment, t.dueDate, t.account]
+    [t.id, t.name, `Tower ${t.tower}`, t.unit, t.type, t.email, t.phone, t.occupancy, t.leaseStart, t.rent, t.payment, t.dueDate, t.account]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
       .join(',')
   );
@@ -46,19 +59,24 @@ function exportCsv(rows) {
   URL.revokeObjectURL(a.href);
 }
 
-function Field({ label, error, children }) {
+function Field({ label, error, hint, children, className = '' }) {
   return (
-    <label className="block">
+    <label className={`block ${className}`}>
       <span className="mb-1 block text-xs font-semibold text-ink-900">{label}</span>
       {children}
-      {error && <span className="mt-1 block text-xs text-status-high">{error}</span>}
+      {error ? (
+        <span className="mt-1 block text-xs text-status-high">{error}</span>
+      ) : (
+        hint && <span className="mt-1 block text-xs text-ink-700/50">{hint}</span>
+      )}
     </label>
   );
 }
 
 export default function TenantManagement() {
-  const [tenants, setTenants] = useState(tenantManagement.tenants);
-  const [activity, setActivity] = useState(tenantManagement.recentActivity);
+  const { tenants, activity, occupiedIds, loading, syncError, reload, pushActivity } = useTenantRegistry();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState({ invoices: false, ledger: false });
 
   const [query, setQuery] = useState('');
@@ -70,20 +88,62 @@ export default function TenantManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  // { tone: 'success' | 'warning' | 'error', text } shown above the stats.
+  const [notice, setNotice] = useState(null);
 
-  const nextId = `T-${String(tenants.reduce((m, t) => Math.max(m, parseInt(t.id.slice(2), 10)), 0) + 1).padStart(4, '0')}`;
+  // Edit Details modal: which tenant is being edited, plus its form state.
+  const [editTarget, setEditTarget] = useState(null);
+  const [editForm, setEditForm] = useState({ firstName: '', lastName: '', email: '', phone: '' });
+  const [editError, setEditError] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Payments made by tenants (from the database, same records as the tenant's Billing page).
+  const [payments, setPayments] = useState([]);
+  const [paymentsError, setPaymentsError] = useState('');
+  const loadPayments = useCallback(async () => {
+    try {
+      setPayments(await endpoints.getAdminRecentPayments(10));
+      setPaymentsError('');
+    } catch (err) {
+      setPaymentsError(err.message || "Couldn't load payments.");
+    }
+  }, []);
+  useEffect(() => {
+    loadPayments();
+  }, [loadPayments]);
+  useAutoRefresh(loadPayments);
+
+  // "View Payments" modal: one tenant's history + saved methods.
+  const [payTarget, setPayTarget] = useState(null);
+  const [payDetail, setPayDetail] = useState(null);
+  const [payDetailError, setPayDetailError] = useState('');
+  const openPayments = async (t) => {
+    setMenuId(null);
+    setPayTarget(t);
+    setPayDetail(null);
+    setPayDetailError('');
+    try {
+      setPayDetail(await endpoints.getAdminTenantPayments(t.accountId));
+    } catch (err) {
+      setPayDetailError(err.message || "Couldn't load this tenant's payments.");
+    }
+  };
+
+  const nextId = `T-${String(tenants.reduce((m, t) => Math.max(m, parseInt(t.id.slice(2), 10) || 0), 0) + 1).padStart(4, '0')}`;
 
   const stats = useMemo(() => {
-    const active = tenants.filter((t) => t.occupancy === 'Active').length;
     const overdue = tenants.filter((t) => t.payment === 'Overdue').length;
+    const pct = (occupiedIds.size / ALL_ROOMS.length) * 100;
     return [
       { id: 'total', label: 'Total Tenants', value: String(tenants.length), delta: tenants.length ? 'Registry count' : '—', icon: 'users' },
       {
         id: 'occ',
         label: 'Occupancy',
-        value: tenants.length ? `${Math.round((active / tenants.length) * 100)}%` : '0%',
-        delta: tenants.length ? `${active} / ${tenants.length} active leases` : '—',
-        tone: active ? 'success' : 'neutral',
+        value: `${pct >= 10 ? Math.round(pct) : pct.toFixed(1)}%`,
+        delta: `${occupiedIds.size} / ${ALL_ROOMS.length} units occupied`,
+        tone: occupiedIds.size ? 'success' : 'neutral',
         icon: 'grid',
       },
       {
@@ -97,82 +157,212 @@ export default function TenantManagement() {
       {
         id: 'rent',
         label: 'Gross Rent',
-        value: formatCurrency(tenants.reduce((s, t) => s + t.rent, 0)).replace('.00', ''),
+        value: formatPhp(tenants.reduce((s, t) => s + t.rent, 0)),
         delta: tenants.length ? 'Current cycle' : '—',
         icon: 'dollar',
       },
     ];
-  }, [tenants]);
+  }, [tenants, occupiedIds]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tenants.filter(
       (t) =>
-        (!q || [t.name, t.unit, t.id, t.email].some((v) => v.toLowerCase().includes(q))) &&
+        (!q || [t.name, t.unit, t.id, t.email, t.type, `T${t.tower}`].some((v) => v.toLowerCase().includes(q))) &&
         (typeFilter === 'All Types' || t.type === typeFilter) &&
         (paymentFilter === 'All Payments' || t.payment === paymentFilter)
     );
   }, [tenants, query, typeFilter, paymentFilter]);
 
-  const pushActivity = (entry) => setActivity((a) => [{ ...entry, time: 'Just now' }, ...a].slice(0, 5));
+  // Vacant rooms for the selected unit type + tower, grouped by floor for the dropdown.
+  const vacantOptions = useMemo(() => {
+    const rooms = vacantRooms({ type: form.type, tower: form.tower, occupiedIds });
+    const groups = [];
+    rooms.forEach((r) => {
+      const label = levelByKey(r.levelKey).label;
+      const last = groups[groups.length - 1];
+      if (last && last.label === label) last.rooms.push(r);
+      else groups.push({ label, rooms: [r] });
+    });
+    // Lowest floor first reads more naturally in a dropdown than the map's top-down order.
+    return { count: rooms.length, groups: groups.reverse() };
+  }, [form.type, form.tower, occupiedIds]);
 
-  const openModal = () => {
-    setForm(EMPTY_FORM);
+  // "Studio (88 vacant)" - counts across both towers.
+  const vacantByType = useMemo(() => {
+    const counts = Object.fromEntries(UNIT_TYPES.map((t) => [t, 0]));
+    ALL_ROOMS.forEach((r) => {
+      if (!occupiedIds.has(r.id)) counts[r.type] += 1;
+    });
+    return counts;
+  }, [occupiedIds]);
+
+  const openModal = (roomId = '') => {
+    const room = roomById(roomId);
+    setForm(room ? { ...EMPTY_FORM(), type: room.type, tower: room.tower, roomId: room.id } : EMPTY_FORM());
     setErrors({});
+    setSubmitError('');
     setModalOpen(true);
   };
 
-  const submit = (e) => {
+  // Arriving from the Map View ("Assign tenant" / "View in registry") passes the
+  // room or tenant through router state.
+  useEffect(() => {
+    const st = location.state;
+    if (!st) return;
+    if (st.assignRoomId && !occupiedIds.has(st.assignRoomId)) openModal(st.assignRoomId);
+    if (st.query) setQuery(st.query);
+    navigate(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
+
+  const submit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     const next = {};
     if (!form.name.trim()) next.name = 'Full legal name is required';
-    if (!form.unit.trim()) next.unit = 'Enter a unit';
-    else if (tenants.some((t) => t.unit.toLowerCase() === form.unit.trim().toLowerCase()))
-      next.unit = 'This unit is already assigned';
-    if (!form.rent || Number(form.rent) <= 0) next.rent = 'Enter a rent amount';
+    const room = roomById(form.roomId);
+    if (!room) next.roomId = 'Select a vacant unit';
+    else if (occupiedIds.has(room.id)) next.roomId = 'This unit is already assigned';
+    if (!form.leaseStart) next.leaseStart = 'Select a lease start date';
     if (!/^\S+@\S+\.\S+$/.test(form.email)) next.email = 'Enter a valid email';
     setErrors(next);
     if (Object.keys(next).length) return;
 
+    // The server creates the tenant record and login (using the registered email),
+    // works out the rent from the unit type, and emails the login details.
+    setSubmitting(true);
+    setSubmitError('');
+    let created;
+    try {
+      created = await endpoints.registerTenant({
+        fullName: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        roomId: room.id,
+        tower: room.tower,
+        unit: room.number,
+        unitType: room.type,
+        leaseStart: form.leaseStart,
+      });
+    } catch (err) {
+      setSubmitError(err.message || 'Registration failed. Please try again.');
+      setSubmitting(false);
+      return;
+    }
+    setSubmitting(false);
+
+    // The tenant now exists in the database; pull the fresh list (with its real ID).
+    await reload();
     const tenant = {
-      id: nextId,
       name: form.name.trim(),
-      unit: form.unit.trim().toUpperCase(),
-      type: form.type,
       email: form.email.trim(),
-      phone: form.phone.trim() || '—',
-      occupancy: 'Active',
-      rent: Number(form.rent),
-      payment: 'Pending',
-      dueDate: nextMonthFirst(),
-      account: 'Good Standing',
+      tower: room.tower,
+      unit: room.number,
+      leaseStart: form.leaseStart,
     };
-    setTenants((t) => [...t, tenant]);
     pushActivity({
       icon: 'plus',
       tone: 'success',
       title: 'New Lease Registered',
-      detail: `${tenant.name} (Unit ${tenant.unit}) successfully onboarded.`,
+      detail: `${tenant.name} (Tower ${tenant.tower}, Unit ${tenant.unit}) successfully onboarded. Lease starts ${formatDate(tenant.leaseStart + 'T00:00:00')}.`,
     });
     setModalOpen(false);
+    setNotice({
+      tone: created.emailSent ? 'success' : 'warning',
+      text: `${tenant.name}'s account was created with ${tenant.email}. ${created.emailMessage}`,
+    });
   };
 
-  const markPaid = (t) => {
-    setTenants((list) =>
-      list.map((x) => (x.id === t.id ? { ...x, payment: 'Paid', account: 'Good Standing' } : x))
-    );
+  const markPaid = async (t) => {
+    setMenuId(null);
+    // Clears the balance in the database, so the tenant's Billing page shows it too.
+    try {
+      await endpoints.markTenantPaid(t.accountId);
+    } catch (err) {
+      setNotice({ tone: 'error', text: `Couldn't mark ${t.name} as paid: ${err.message}` });
+      return;
+    }
+    await reload();
+    loadPayments();
     pushActivity({ icon: 'check', tone: 'success', title: 'Payment Received', detail: `${t.name} (Unit ${t.unit}) marked as paid.` });
-    setMenuId(null);
   };
 
-  const removeTenant = (t) => {
-    setTenants((list) => list.filter((x) => x.id !== t.id));
+  const removeTenant = async (t) => {
     setMenuId(null);
+    // Deletes the tenant record and their login, so the unit can be assigned again.
+    try {
+      await endpoints.removeTenantAccount(t.accountId);
+    } catch (err) {
+      setNotice({ tone: 'error', text: `Couldn't remove ${t.name}: ${err.message}` });
+      return;
+    }
+    await reload();
+    pushActivity({ icon: 'trash', tone: 'progress', title: 'Tenant Removed', detail: `${t.name} left ${t.tower ? `Tower ${t.tower}` : t.building || 'the building'}, Unit ${t.unit}. The unit is vacant again.` });
+  };
+
+  const openEdit = (t) => {
+    setMenuId(null);
+    setEditForm({ firstName: t.firstName, lastName: t.lastName, email: t.email, phone: t.phone });
+    setEditError('');
+    setEditTarget(t);
+  };
+
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    if (editSaving || !editTarget) return;
+    const f = { ...editForm, firstName: editForm.firstName.trim(), lastName: editForm.lastName.trim(), email: editForm.email.trim(), phone: editForm.phone.trim() };
+    if (!f.firstName || !f.lastName) return setEditError('First and last name are required.');
+    if (!/^\S+@\S+\.\S+$/.test(f.email)) return setEditError('Enter a valid email.');
+
+    setEditSaving(true);
+    setEditError('');
+    try {
+      // Same record the tenant edits in Account Settings, so they see this too.
+      await endpoints.updateAdminTenant(editTarget.accountId, {
+        firstName: f.firstName,
+        lastName: f.lastName,
+        email: f.email,
+        phone: f.phone || null,
+      });
+    } catch (err) {
+      setEditError(err.message || 'Could not save changes. Please try again.');
+      setEditSaving(false);
+      return;
+    }
+    setEditSaving(false);
+    await reload();
+    const emailChanged = f.email.toLowerCase() !== editTarget.email.toLowerCase();
+    pushActivity({ icon: 'pencil', tone: 'success', title: 'Tenant Details Updated', detail: `${f.firstName} ${f.lastName} (Unit ${editTarget.unit}) contact details were updated.` });
+    setNotice({
+      tone: 'success',
+      text: `${f.firstName} ${f.lastName}'s details were saved.${emailChanged ? ` Their sign-in email is now ${f.email.toLowerCase()}.` : ''}`,
+    });
+    setEditTarget(null);
   };
 
   return (
     <AdminLayout crumb="Tenant & Financial">
       <div className="space-y-6">
+        {notice && (
+          <div
+            role="status"
+            className={`flex items-start justify-between gap-3 rounded-lg px-4 py-3 text-sm ${
+              { success: 'bg-status-successBg text-status-success', warning: 'bg-status-progressBg text-status-progress', error: 'bg-status-highBg text-status-high' }[notice.tone]
+            }`}
+          >
+            <span>{notice.text}</span>
+            <button onClick={() => setNotice(null)} aria-label="Dismiss" className="flex-shrink-0 opacity-70 hover:opacity-100">
+              <Icon name="close" size={14} />
+            </button>
+          </div>
+        )}
+        {syncError && (
+          <div role="alert" className="flex items-center justify-between gap-3 rounded-lg bg-status-progressBg px-4 py-3 text-sm text-status-progress">
+            <span>Couldn't refresh tenants from the server ({syncError}). Showing the last data loaded.</span>
+            <button onClick={reload} className="flex-shrink-0 font-semibold underline">Retry</button>
+          </div>
+        )}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-ink-900">Tenant Management</h1>
@@ -186,7 +376,7 @@ export default function TenantManagement() {
               <Icon name="download" size={15} /> Export
             </button>
             <button
-              onClick={openModal}
+              onClick={() => openModal()}
               className="flex items-center gap-1.5 rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600"
             >
               <Icon name="plus" size={15} /> Add New Tenant
@@ -220,8 +410,9 @@ export default function TenantManagement() {
                 className="rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400"
               >
                 <option>All Types</option>
-                <option>Residential</option>
-                <option>Commercial</option>
+                {UNIT_TYPES.map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
               </select>
               <button
                 onClick={() => setShowFilters((v) => !v)}
@@ -290,16 +481,26 @@ export default function TenantManagement() {
                         </span>
                       </span>
                     </td>
-                    <td className="py-3 pr-3 font-mono text-xs text-ink-700/70">{t.unit}</td>
-                    <td className="py-3 pr-3 text-xs leading-relaxed text-ink-700/70">
-                      <span className="flex items-center gap-1.5"><Icon name="mail" size={12} />{t.email}</span>
-                      <span className="flex items-center gap-1.5"><Icon name="phone" size={12} />{t.phone}</span>
+                    <td className="py-3 pr-3">
+                      <span className="block font-mono text-xs text-ink-900">{t.tower ? `T${t.tower}` : t.building || '—'} · {t.unit}</span>
+                      <span className="text-[11px] text-ink-700/50">{t.type || '—'}</span>
                     </td>
-                    <td className="py-3 pr-3"><StatusBadge label={t.occupancy} /></td>
-                    <td className="py-3 pr-3 font-semibold text-ink-900">{formatCurrency(t.rent)}</td>
+                    <td className="py-3 pr-3 text-xs leading-relaxed text-ink-700/70">
+                      <span className="flex items-center gap-1.5"><Icon name="mail" size={12} />{t.email || '—'}</span>
+                      <span className="flex items-center gap-1.5"><Icon name="phone" size={12} />{t.phone || '—'}</span>
+                    </td>
+                    <td className="py-3 pr-3">
+                      <StatusBadge label={t.occupancy} />
+                      {t.leaseStart && (
+                        <span className="mt-1 block text-[11px] text-ink-700/50">
+                          Starts {formatDate(t.leaseStart + 'T00:00:00')}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 pr-3 font-semibold text-ink-900">{formatPhp(t.rent)}</td>
                     <td className="py-3 pr-3"><StatusBadge label={t.payment} /></td>
                     <td className="whitespace-nowrap py-3 pr-3 text-xs text-ink-700/70">
-                      <span className="flex items-center gap-1.5"><Icon name="calendar" size={12} />{formatDate(t.dueDate + 'T00:00:00', { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
+                      <span className="flex items-center gap-1.5"><Icon name="calendar" size={12} />{t.dueDate ? formatDate(t.dueDate + 'T00:00:00', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '—'}</span>
                     </td>
                     <td className="py-3 pr-3"><StatusBadge label={t.account} /></td>
                     <td className="relative py-3 text-right">
@@ -313,7 +514,13 @@ export default function TenantManagement() {
                       {menuId === t.id && (
                         <>
                           <button aria-label="Close menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setMenuId(null)} />
-                          <div className="absolute right-0 top-9 z-20 w-40 overflow-hidden rounded-lg border border-black/10 bg-white text-left shadow-lg">
+                          <div className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-lg border border-black/10 bg-white text-left shadow-lg">
+                            <button onClick={() => openEdit(t)} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-sand-100">
+                              <Icon name="pencil" size={14} /> Edit Details
+                            </button>
+                            <button onClick={() => openPayments(t)} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-sand-100">
+                              <Icon name="card" size={14} /> View Payments
+                            </button>
                             {t.payment !== 'Paid' && (
                               <button onClick={() => markPaid(t)} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-sand-100">
                                 <Icon name="check" size={14} /> Mark as Paid
@@ -332,7 +539,11 @@ export default function TenantManagement() {
             </table>
             {filtered.length === 0 && (
               <p className="py-8 text-center text-sm text-ink-700/50">
-                {tenants.length === 0 ? 'No tenants registered yet.' : 'No tenants match this filter.'}
+                {loading && tenants.length === 0
+                  ? 'Loading tenants…'
+                  : tenants.length === 0
+                    ? 'No tenants registered yet.'
+                    : 'No tenants match this filter.'}
               </p>
             )}
           </div>
@@ -343,6 +554,57 @@ export default function TenantManagement() {
               <button disabled className="rounded border border-black/10 px-2.5 py-1 font-semibold opacity-50">PREV</button>
               <button disabled className="rounded border border-black/10 px-2.5 py-1 font-semibold opacity-50">NEXT</button>
             </span>
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-semibold text-ink-900">Recent Payments</h2>
+              <p className="text-xs text-ink-700/50">Live from the database: payments made by tenants in their portal, plus ones you record.</p>
+            </div>
+            <button onClick={loadPayments} className="flex items-center gap-1 text-xs font-semibold uppercase text-forest-600 hover:underline">
+              <Icon name="refresh" size={12} /> Refresh
+            </button>
+          </div>
+          {paymentsError && <p role="alert" className="mb-2 text-xs text-status-high">{paymentsError}</p>}
+          <div className="overflow-x-auto thin-scrollbar">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="text-left text-xs font-semibold uppercase tracking-wide text-ink-700/40">
+                  <th className="pb-2 pr-3">Reference Code</th>
+                  <th className="pb-2 pr-3">Tenant</th>
+                  <th className="pb-2 pr-3">Payment Mode</th>
+                  <th className="pb-2 pr-3">Date &amp; Time (PHT)</th>
+                  <th className="pb-2 pr-3 text-right">Amount</th>
+                  <th className="pb-2">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/5">
+                {payments.map((p) => {
+                  const when = formatPaidAt(p.paidAt, p.date);
+                  return (
+                    <tr key={p.referenceCode}>
+                      <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink-900">{p.referenceCode}</td>
+                      <td className="py-2.5 pr-3 leading-tight">
+                        <span className="block font-semibold text-ink-900">{p.tenantName}</span>
+                        <span className="text-[11px] text-ink-700/50">{p.tenantCode} · Unit {p.unit}</span>
+                      </td>
+                      <td className="py-2.5 pr-3 text-ink-700/80">{p.paymentMode || '—'}</td>
+                      <td className="whitespace-nowrap py-2.5 pr-3 text-xs leading-tight text-ink-700/70">
+                        <span className="block">{when.date}</span>
+                        <span className="text-ink-700/50">{when.time}</span>
+                      </td>
+                      <td className="py-2.5 pr-3 text-right font-semibold text-ink-900">{formatPhp(p.amount)}</td>
+                      <td className="py-2.5"><StatusBadge label={p.status} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {payments.length === 0 && !paymentsError && (
+              <p className="py-6 text-center text-sm text-ink-700/50">No payments recorded yet.</p>
+            )}
           </div>
         </Card>
 
@@ -370,7 +632,7 @@ export default function TenantManagement() {
                       <p className="text-xs text-ink-700/60">{a.detail}</p>
                     </div>
                   </div>
-                  <span className="flex-shrink-0 text-xs text-ink-700/40">{a.time}</span>
+                  <span className="flex-shrink-0 text-xs text-ink-700/40">{formatRelativeTime(a.at)}</span>
                 </li>
               ))}
             </ul>
@@ -413,22 +675,156 @@ export default function TenantManagement() {
       </div>
 
       <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="Register New Tenant"
+        open={!!payTarget}
+        onClose={() => setPayTarget(null)}
+        title={`Payments: ${payTarget?.name || ''}`}
+        maxWidth="max-w-2xl"
+        footer={
+          <button onClick={() => setPayTarget(null)} className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600">
+            Close
+          </button>
+        }
+      >
+        {payDetailError && <p role="alert" className="text-xs text-status-high">{payDetailError}</p>}
+        {!payDetail && !payDetailError && <p className="py-6 text-center text-sm text-ink-700/50">Loading…</p>}
+        {payDetail && (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between rounded-lg bg-sand-100 px-4 py-3">
+              <span className="text-xs font-medium uppercase tracking-wide text-ink-700/50">Total paid</span>
+              <span className="text-lg font-bold text-ink-900">{formatPhp(payDetail.totalPaid)}</span>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">Payment history</p>
+              {payDetail.transactions.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-black/10 bg-sand-50 p-4 text-center text-sm text-ink-700/50">No payments yet.</p>
+              ) : (
+                <div className="overflow-x-auto thin-scrollbar">
+                  <table className="w-full min-w-[520px] text-sm">
+                    <thead>
+                      <tr className="text-left text-xs font-semibold uppercase tracking-wide text-ink-700/40">
+                        <th className="pb-2 pr-3">Reference</th>
+                        <th className="pb-2 pr-3">Mode</th>
+                        <th className="pb-2 pr-3">Date &amp; Time (PHT)</th>
+                        <th className="pb-2 pr-3 text-right">Amount</th>
+                        <th className="pb-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-black/5">
+                      {payDetail.transactions.map((tx) => {
+                        const when = formatPaidAt(tx.paidAt, tx.date);
+                        return (
+                          <tr key={tx.id}>
+                            <td className="py-2 pr-3 font-mono text-xs font-semibold">{tx.id}</td>
+                            <td className="py-2 pr-3">{tx.paymentMode || '—'}</td>
+                            <td className="whitespace-nowrap py-2 pr-3 text-xs leading-tight text-ink-700/70">
+                              {when.date}<br />{when.time}
+                            </td>
+                            <td className="py-2 pr-3 text-right font-semibold">{formatPhp(tx.amount)}</td>
+                            <td className="py-2"><StatusBadge label={tx.status} /></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">Saved payment methods</p>
+              {payDetail.paymentMethods.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-black/10 bg-sand-50 p-4 text-center text-sm text-ink-700/50">None saved.</p>
+              ) : (
+                <div className="space-y-2">
+                  {payDetail.paymentMethods.map((m) => (
+                    <div key={m.id} className="flex items-center gap-3 rounded-lg border border-black/5 p-3">
+                      <MethodLogo method={m} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-ink-900">{methodTitle(m)}</p>
+                        <p className="truncate text-xs text-ink-700/50">{methodSubtitle(m)}</p>
+                      </div>
+                      {m.isPrimary && <StatusBadge label="Primary" tone="success" />}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="mt-2 text-[11px] text-ink-700/40">Only the last 4 digits are on file. Full card numbers and CVVs are never stored.</p>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!editTarget}
+        onClose={() => setEditTarget(null)}
+        title="Edit Tenant Details"
         footer={
           <>
-            <button onClick={() => setModalOpen(false)} className="rounded-md px-4 py-2 text-sm font-medium hover:bg-sand-100">
+            <button onClick={() => setEditTarget(null)} className="rounded-md px-4 py-2 text-sm font-medium hover:bg-sand-100">
               Cancel
             </button>
-            <button type="submit" form="register-tenant" className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600">
-              Authorize Registration
+            <button
+              type="submit"
+              form="edit-tenant"
+              disabled={editSaving}
+              className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:opacity-60"
+            >
+              {editSaving ? 'Saving…' : 'Save Changes'}
             </button>
           </>
         }
       >
         <p className="-mt-2 mb-4 text-xs text-ink-700/60">
-          Input mandatory lease information and contact records to authorize facility access.
+          {editTarget?.id} · {editTarget?.tower ? `Tower ${editTarget.tower}` : editTarget?.building}, Unit {editTarget?.unit}. These are the same details the tenant
+          sees in their Account Settings; changing the email also changes the address they sign in with.
+        </p>
+        <form id="edit-tenant" onSubmit={saveEdit} noValidate className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="First Name">
+              <input value={editForm.firstName} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} className={inputCls} />
+            </Field>
+            <Field label="Last Name">
+              <input value={editForm.lastName} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} className={inputCls} />
+            </Field>
+            <Field label="Email Address">
+              <input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className={inputCls} />
+            </Field>
+            <Field label="Contact Number">
+              <input value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} className={inputCls} />
+            </Field>
+          </div>
+          {editError && (
+            <p role="alert" className="rounded-md bg-status-highBg px-3 py-2 text-xs text-status-high">
+              {editError}
+            </p>
+          )}
+        </form>
+      </Modal>
+
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="Register New Tenant"
+        maxWidth="max-w-2xl"
+        footer={
+          <>
+            <button onClick={() => setModalOpen(false)} className="rounded-md px-4 py-2 text-sm font-medium hover:bg-sand-100">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="register-tenant"
+              disabled={submitting}
+              className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:opacity-60"
+            >
+              {submitting ? 'Registering…' : 'Authorize Registration'}
+            </button>
+          </>
+        }
+      >
+        <p className="-mt-2 mb-4 text-xs text-ink-700/60">
+          Input mandatory lease information and contact records. A tenant account is created with the email below and the login details are emailed to it.
         </p>
         <form id="register-tenant" onSubmit={submit} noValidate className="space-y-4">
           <div>
@@ -445,18 +841,77 @@ export default function TenantManagement() {
 
           <div>
             <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-ink-700/40">Location & Lease</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Assigned Unit" error={errors.unit}>
-                <input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="e.g. 402-A" className={inputCls} />
-              </Field>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Field label="Unit Type">
-                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className={inputCls}>
-                  <option>Residential</option>
-                  <option>Commercial</option>
+                <select
+                  value={form.type}
+                  onChange={(e) => setForm({ ...form, type: e.target.value, roomId: '' })}
+                  className={inputCls}
+                >
+                  {UNIT_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
                 </select>
               </Field>
-              <Field label="Monthly Rent (USD)" error={errors.rent}>
-                <input type="number" min="0" value={form.rent} onChange={(e) => setForm({ ...form, rent: e.target.value })} placeholder="2450.00" className={inputCls} />
+              <Field label="Tower">
+                <select
+                  value={form.tower}
+                  onChange={(e) => setForm({ ...form, tower: Number(e.target.value), roomId: '' })}
+                  className={inputCls}
+                >
+                  {TOWERS.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field
+                label="Assigned Unit"
+                error={errors.roomId}
+                hint={`${vacantOptions.count} vacant ${vacantOptions.count === 1 ? 'unit' : 'units'}`}
+              >
+                <select
+                  value={form.roomId}
+                  onChange={(e) => setForm({ ...form, roomId: e.target.value })}
+                  disabled={vacantOptions.count === 0}
+                  className={inputCls}
+                >
+                  <option value="">{vacantOptions.count === 0 ? 'No vacant units' : 'Select a unit…'}</option>
+                  {vacantOptions.groups.map((g) => (
+                    <optgroup key={g.label} label={g.label}>
+                      {g.rooms.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Lease Start Date" error={errors.leaseStart}>
+                <input
+                  type="date"
+                  value={form.leaseStart}
+                  onChange={(e) => setForm({ ...form, leaseStart: e.target.value })}
+                  className={inputCls}
+                />
+              </Field>
+              <Field
+                label="Monthly Rent (PHP)"
+                hint={`Fixed rate for ${form.type} units.`}
+              >
+                <input
+                  value={formatPhp(RENT_BY_TYPE[form.type])}
+                  readOnly
+                  tabIndex={-1}
+                  aria-readonly="true"
+                  className={`${inputCls} cursor-not-allowed bg-sand-100 font-semibold text-ink-700/70`}
+                />
               </Field>
             </div>
           </div>
@@ -472,6 +927,11 @@ export default function TenantManagement() {
               </Field>
             </div>
           </div>
+          {submitError && (
+            <p role="alert" className="rounded-md bg-status-highBg px-3 py-2 text-xs text-status-high">
+              {submitError}
+            </p>
+          )}
         </form>
       </Modal>
     </AdminLayout>

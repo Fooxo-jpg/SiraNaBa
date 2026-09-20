@@ -8,6 +8,7 @@ import StatusBadge from '../components/StatusBadge.jsx';
 import { LoadingState, ErrorState, ToggleSwitch } from '../components/Common.jsx';
 import { endpoints } from '../api/endpoints.js';
 import { formatRelativeTime } from '../utils/format.js';
+import { NOTIFICATIONS_CHANGED } from '../components/Layout.jsx';
 
 const CATEGORY_ICON = { Payments: 'card', Maintenance: 'wrench', Community: 'info' };
 const PAGE_SIZE = 6;
@@ -86,12 +87,16 @@ export default function Notifications() {
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const markAllRead = () =>
-    endpoints.markAllNotificationsRead().then((data) => setNotifications(data));
+    endpoints.markAllNotificationsRead().then((data) => {
+      setNotifications(data);
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+    });
 
   const markRead = (id) =>
-    endpoints.markNotificationRead(id).then(() =>
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
-    );
+    endpoints.markNotificationRead(id).then(() => {
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+    });
 
   return (
     <Layout crumb="Notifications">
@@ -238,7 +243,7 @@ export default function Notifications() {
                       </span>
                     </div>
                     <p className="text-sm font-semibold text-ink-900">{n.title}</p>
-                    <p className="mt-0.5 text-sm leading-relaxed text-ink-700/60">{n.body}</p>
+                    <p className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-ink-700/60">{n.body}</p>
                     {n.cta && (
                       <Link
                         to={n.cta.route}

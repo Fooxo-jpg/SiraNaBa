@@ -61,10 +61,15 @@ install) and Gemini API key setup. Prefer to run them separately? `npm run dev`
 
 Demo login seeded on first backend run: `alex.rivers@siranaba.com` / `Password123!`
 
-Note: the **admin portal** (`src/pages/admin/*`) still reads from `src/data/adminMockDb.js`
-directly rather than through `endpoints.js` — it was never wired to the API layer in this
-project, so it's unaffected by the backend above. Ask for it to be wired up too if you want
-the admin screens backed by the same API.
+**Tenant data is shared between the tenant portal and the admin portal.** Admin > Tenant
+Management (and the Building Map) read the same MongoDB `tenants` records the tenant portal uses,
+via `GET /api/admin/tenants`. Editing a tenant on either side (name, email, phone; and rent
+payment status from the admin side) updates that one record, and the other side picks it up within
+~15 seconds or as soon as its tab regains focus (see `src/utils/useAutoRefresh.js`). Staff Management
+works the same way: it reads/writes the MongoDB `staff` collection via `GET/POST/PATCH/DELETE
+/api/admin/staff` (see `StaffController`/`StaffService` on the backend), so adding, editing, or
+removing a staff member persists for real instead of resetting on refresh. The remaining admin
+screens (Command Center, Triage, Configuration, IoT) still run on `src/data/adminMockDb.js`.
 
 ## Responsive behavior
 

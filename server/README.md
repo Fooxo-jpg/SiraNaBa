@@ -13,6 +13,7 @@ It implements every route the front end's `src/api/endpoints.js` calls:
 | POST | `/api/auth/login` | Sets an httpOnly JWT cookie |
 | POST | `/api/auth/logout` | Clears the session cookie |
 | GET | `/api/tenant` | Requires a session |
+| PATCH | `/api/tenant` | Account Settings > Profile (name, email, phone) |
 | GET | `/api/dashboard/summary` | |
 | GET | `/api/tickets` | |
 | GET | `/api/tickets/categories` | Public - replaces the `db.ticketCategories` import `SubmitRequest.jsx` used to make |
@@ -157,9 +158,9 @@ This is still a **single-tenant demo** in one sense: there's one seeded
 additional `User`/`Tenant` documents in MongoDB directly (each `User` has a
 `tenantId` pointing at its `Tenant`).
 
-Note: the **admin portal** (`/admin/*`) is intentionally left out of this
-auth flow - it still runs on `adminMockDb.js` and was never wired to the
-Java backend at all (see the note in the main project `README.md`).
+Note: the admin portal's **Tenant Management** and **Building Map** screens use the API (see
+"Registering tenants" and "Keeping the tenant and admin sides in sync" below). The other admin
+screens still run on `adminMockDb.js`.
 
 ## Project layout
 
@@ -178,3 +179,60 @@ server/
     exception/    # ApiException + a @RestControllerAdvice returning {message}
     bootstrap/    # DataSeeder (demo data on first run)
 ```
+
+## Registering tenants (admin)
+
+`POST /api/admin/tenants` (ADMIN only) is what the admin portal's **Authorize
+Registration** button calls. It:
+
+1. creates the tenant record (unit, tower, unit type, lease start, rent),
+2. creates a tenant login using the registered email,
+3. emails the login details to that address.
+
+The initial password is the initials of the first and last name + tower number +
+unit, e.g. Dwane Valencia, Tower 1, Unit 402 -> `DV1402`. The monthly rent is
+looked up server-side from the unit type (`UnitPricing.java`); the client can't set it.
+
+`DELETE /api/admin/tenants/{tenantId}` removes the tenant and their login.
+
+To actually send email, set the `MAIL_*` values in `.env` (see `.env.example`). With
+`MAIL_HOST` empty the account is still created, and the admin portal shows a notice
+that no email was sent.
+
+## Keeping the tenant and admin sides in sync
+
+There is one copy of each tenant: the document in the `tenants` collection (plus its `users` login).
+Both portals read and write it, so there's nothing to reconcile.
+
+| Method | Path | Who | What |
+|---|---|---|---|
+| GET | `/api/admin/tenants` | ADMIN | The Tenant Management table. `payment` (Paid/Pending/Overdue), `occupancy` and `account` are derived from balance, due date and lease start, never stored |
+| PATCH | `/api/admin/tenants/{id}` | ADMIN | Edit a tenant's name / email / phone |
+| POST | `/api/admin/tenants/{id}/mark-paid` | ADMIN | Clears the balance, adds a transaction to the tenant's billing history, sends them a notification |
+| PATCH | `/api/tenant` | TENANT | The tenant editing the same fields from Account Settings |
+
+## Admin Configuration page: live MongoDB info
+
+`GET /api/admin/system/database` (ADMIN only) powers the **MongoDB Store** card and the **Database**
+tab on Admin > Configuration. It pings the database and reports the database name, host name(s),
+server version, ping latency, data / storage / index sizes, server uptime, and a document count per
+collection. The page re-checks every 30 seconds and has a Refresh button.
+
+- The connection string is never returned - only host names and the database name, so the password in
+  `MONGODB_URI` can't leak through this endpoint.
+- If MongoDB can't be reached, the endpoint still answers `200` with `status: "Offline"` and a short
+  message, so the page can show the outage instead of an error.
+- Sizes, version and uptime are best-effort: some managed MongoDB tiers (e.g. Atlas shared clusters)
+  don't allow `serverStatus`, in which case Uptime shows "—" while everything else still works.
+
+Both PATCH routes go through `TenantProfileService`, so validation is identical: emails are unique
+across every login (the admin's included), and changing a tenant's email also changes the email they
+sign in with. The tenant's balance, due date and auto-pay flag live on the tenant record;
+`GET /api/billing` reads them from there, so the Billing page can't disagree with the dashboard or the
+admin table.
+
+Each tenant has a registry ID (`tenantCode`, e.g. `T-0007`) stored on the document. Tenants created
+before that field existed are given one automatically the first time the admin list is loaded.
+
+The front end refetches on a 15 second timer and whenever the tab regains focus. If an admin removes a
+tenant, that tenant's next refetch fails with 401/404 and they're sent back to the sign-in page.

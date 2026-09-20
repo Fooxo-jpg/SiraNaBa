@@ -9,6 +9,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.index.Indexed;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,7 +30,8 @@ public class Billing {
     private boolean autoPayActive;
 
     private List<BreakdownLine> breakdown = new ArrayList<>();
-    private PaymentMethod paymentMethod;
+    /** Saved payment methods: cards, e-wallets (GCash, Maya) and online banking. */
+    private List<PaymentMethod> paymentMethods = new ArrayList<>();
     private List<UtilityBreakdown> utilityBreakdowns = new ArrayList<>();
     private List<Transaction> transactions = new ArrayList<>();
     private int totalTransactionCount;
@@ -49,12 +51,23 @@ public class Billing {
         private double amount;
     }
 
+    /**
+     * A saved way to pay. Only display-safe data is stored: for cards that is the
+     * brand, last 4 digits, expiry and holder name - never the full card number or CVV.
+     */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     public static class PaymentMethod {
-        private String brand;
+        private String id;
+        /** CARD | EWALLET | BANK */
+        private String type;
+        /** Visa / Mastercard / ... for cards, GCash / Maya, or the bank name (BDO, BPI, RCBC, ...). */
+        private String provider;
+        private String accountName;
+        /** Last 4 digits of the card number, mobile number or bank account. */
         private String last4;
+        /** MM/YY, cards only. */
         private String expiry;
 
         // Named `primary` on the Java side (Lombok's boolean getter for a field
@@ -82,11 +95,19 @@ public class Billing {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class Transaction {
+        /** The payment reference code, e.g. SNB-20260920-K7M2QX. */
         private String id;
         private String title;
         private String date;
         private double amount;
         /** Successful | Pending | Failed */
         private String status;
+        /** How it was paid, e.g. "GCash" or "BDO Online Banking". Null for older records. */
+        private String paymentMode;
+        private Instant paidAt;
+
+        public Transaction(String id, String title, String date, double amount, String status) {
+            this(id, title, date, amount, status, null, null);
+        }
     }
 }

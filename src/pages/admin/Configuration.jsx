@@ -1,8 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import Card from '../../components/Card.jsx';
 import Icon from '../../components/Icon.jsx';
 import { configuration } from '../../data/adminMockDb.js';
+import { endpoints } from '../../api/endpoints.js';
+import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
+import { formatBytes, formatDuration, formatRelativeTime } from '../../utils/format.js';
 
 const TABS = [
   { id: 'logs', label: 'System Logs', icon: 'grid' },
@@ -15,6 +18,7 @@ const STATUS_STYLES = {
   Healthy: 'text-status-success',
   Connected: 'text-status-success',
   Degraded: 'text-status-high',
+  Offline: 'text-status-high',
 };
 
 const LEVEL_STYLES = {
@@ -24,10 +28,132 @@ const LEVEL_STYLES = {
   DEBUG: 'bg-white/10 text-white/50',
 };
 
+function DetailRow({ label, value, mono = true }) {
+  return (
+    <div>
+      <p className="text-xs text-ink-700/50">{label}</p>
+      <p className={`break-all text-sm font-semibold text-ink-900 ${mono ? 'font-mono' : ''}`}>{value}</p>
+    </div>
+  );
+}
+
+// "Database" tab: everything the server can tell us about the live MongoDB.
+function DatabasePanel({ db, error, refreshing, onRefresh }) {
+  const failed = !!error || (db && !db.connected);
+  return (
+    <Card className="p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-ink-900">MongoDB Connection</h2>
+          <p className="text-xs text-ink-700/50">
+            Live from the database this server is connected to.
+            {db?.checkedAt && ` Checked ${formatRelativeTime(db.checkedAt)}.`}
+          </p>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-sm font-medium hover:bg-sand-100 disabled:opacity-60"
+        >
+          <Icon name="refresh" size={14} /> {refreshing ? 'Checking…' : 'Refresh'}
+        </button>
+      </div>
+
+      {failed && (
+        <p role="alert" className="mb-4 rounded-md bg-status-highBg px-3 py-2 text-xs text-status-high">
+          {error || db.error}
+        </p>
+      )}
+
+      {!db && !error && <p className="py-6 text-center text-sm text-ink-700/50">Checking the database…</p>}
+
+      {db && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+            <DetailRow label="Status" value={error ? 'Offline' : db.status} mono={false} />
+            <DetailRow label="Database" value={db.database || '—'} />
+            <DetailRow label="Host" value={db.hosts?.length ? db.hosts.join(', ') : '—'} />
+            <DetailRow label="Connection type" value={db.srv ? 'mongodb+srv (Atlas / DNS seedlist)' : 'mongodb (direct)'} mono={false} />
+            <DetailRow label="Server version" value={db.version || '—'} />
+            <DetailRow label="Ping latency" value={db.latencyMs == null ? '—' : `${db.latencyMs} ms`} />
+            <DetailRow label="Server uptime" value={formatDuration(db.uptimeSeconds)} />
+            <DetailRow label="Data size" value={formatBytes(db.dataSizeBytes)} />
+            <DetailRow label="Storage used" value={formatBytes(db.storageSizeBytes)} />
+            <DetailRow label="Index size" value={formatBytes(db.indexSizeBytes)} />
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-700/40">
+              Collections ({db.collections.length})
+            </h3>
+            {db.collections.length === 0 ? (
+              <p className="text-sm text-ink-700/50">No collections found.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs font-semibold uppercase tracking-wide text-ink-700/40">
+                    <th className="pb-2">Collection</th>
+                    <th className="pb-2 text-right">Documents</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/5">
+                  {db.collections.map((c) => (
+                    <tr key={c.name}>
+                      <td className="py-2 font-mono text-xs text-ink-900">{c.name}</td>
+                      <td className="py-2 text-right font-mono text-xs font-semibold text-ink-900">{c.documents.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function Configuration() {
   const { systemStatus, logs, version, sessionRemaining } = configuration;
   const [tab, setTab] = useState('logs');
   const [query, setQuery] = useState('');
+
+  // Live MongoDB status (GET /api/admin/system/database). Re-checked every 30s.
+  const [db, setDb] = useState(null);
+  const [dbError, setDbError] = useState('');
+  const [refreshing, setRefreshing] = useState(true);
+
+  const checkDb = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      setDb(await endpoints.getDatabaseStatus());
+      setDbError('');
+    } catch (err) {
+      setDbError(err.message || "Couldn't reach the server to check the database.");
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkDb();
+  }, [checkDb]);
+  useAutoRefresh(checkDb, { intervalMs: 30000 });
+
+  // The "MongoDB Store" card is live; the other cards are still placeholders.
+  const dbUp = !dbError && db?.connected;
+  const cards = systemStatus.map((s) =>
+    s.id !== 'db'
+      ? s
+      : {
+          ...s,
+          status: dbError ? 'Offline' : db ? db.status : 'Checking…',
+          metrics: [
+            { label: 'Storage Used:', value: dbUp ? formatBytes(db.storageSizeBytes) : '—' },
+            { label: 'Uptime:', value: dbUp ? formatDuration(db.uptimeSeconds) : '—' },
+          ],
+        }
+  );
 
   const filteredLogs = useMemo(
     () => (!query ? logs : logs.filter((l) => l.text.toLowerCase().includes(query.toLowerCase()) || l.tag.toLowerCase().includes(query.toLowerCase()))),
@@ -45,7 +171,7 @@ export default function Configuration() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {systemStatus.map((s) => (
+          {cards.map((s) => (
             <Card key={s.id} className="p-4">
               <div className="mb-3 flex items-center justify-between">
                 <span className="flex items-center gap-2 font-semibold text-ink-900">
@@ -140,6 +266,8 @@ export default function Configuration() {
               <p className="text-white/30">&gt; Waiting for incoming log stream...</p>
             </div>
           </Card>
+        ) : tab === 'database' ? (
+          <DatabasePanel db={db} error={dbError} refreshing={refreshing} onRefresh={checkDb} />
         ) : (
           <Card className="flex flex-col items-center justify-center gap-2 p-10 text-center text-sm text-ink-700/50">
             <Icon name="info" size={18} className="text-ink-700/30" />
