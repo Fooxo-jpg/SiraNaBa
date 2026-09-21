@@ -2,7 +2,6 @@ package com.siranaba.backend.service;
 
 import com.siranaba.backend.dto.CreateTicketRequest;
 import com.siranaba.backend.dto.TicketListResponse;
-import com.siranaba.backend.dto.TriageResult;
 import com.siranaba.backend.dto.UpdateTicketRequest;
 import com.siranaba.backend.exception.ResourceNotFoundException;
 import com.siranaba.backend.model.Specialist;
@@ -24,13 +23,13 @@ public class TicketService {
 
     private final TicketRepository ticketRepository;
     private final TenantContext tenantContext;
-    private final GeminiTriageService geminiTriageService;
+    private final TicketTriageQueue ticketTriageQueue;
 
     public TicketService(TicketRepository ticketRepository, TenantContext tenantContext,
-                          GeminiTriageService geminiTriageService) {
+                          TicketTriageQueue ticketTriageQueue) {
         this.ticketRepository = ticketRepository;
         this.tenantContext = tenantContext;
-        this.geminiTriageService = geminiTriageService;
+        this.ticketTriageQueue = ticketTriageQueue;
     }
 
     public TicketListResponse list() {
@@ -43,6 +42,11 @@ public class TicketService {
         String tenantId = tenantContext.currentTenantId();
         return ticketRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found."));
+    }
+
+    /** Admin dispatch queue, oldest first so it matches the triage worker order. */
+    public List<Ticket> listForAdmin() {
+        return ticketRepository.findAllByOrderBySubmittedAtAsc();
     }
 
     public Ticket create(CreateTicketRequest request) {
@@ -64,18 +68,12 @@ public class TicketService {
         ticket.setTimeline(List.of(new TimelineEvent(
                 "tl_" + UUID.randomUUID(),
                 "Ticket Received",
-                "Your request was successfully logged into our system and prioritized.",
+                "Your request was queued for AI severity assessment.",
                 now
         )));
-
-        // AI triage (Gemini) assesses severity synchronously so the ticket
-        // returned to the client already has its real priority, rather than
-        // requiring the front end to poll for it.
-        TriageResult triage = geminiTriageService.triage(
-                request.category(), request.title(), request.description(), request.location());
-        ticket.setPriority(triage.priority());
-        ticket.setSafetyNote(triage.safetyNote());
-        ticket.setEstimatedCompletion(triage.estimatedCompletion());
+        ticket.setPriority(TicketTriageQueue.QUEUED_PRIORITY);
+        ticket.setSafetyNote("");
+        ticket.setEstimatedCompletion(null);
 
         return ticketRepository.save(ticket);
     }

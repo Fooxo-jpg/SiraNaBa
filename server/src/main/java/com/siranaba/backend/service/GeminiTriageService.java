@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siranaba.backend.config.AppProperties;
 import com.siranaba.backend.dto.TriageResult;
+import com.siranaba.backend.model.Attachment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -30,7 +32,7 @@ import java.util.Set;
 public class GeminiTriageService {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiTriageService.class);
-    private static final Set<String> VALID_PRIORITIES = Set.of("Low", "Medium", "High", "Critical");
+    private static final Set<String> VALID_PRIORITIES = Set.of("Low", "Medium", "Severe", "Critical");
 
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
@@ -45,6 +47,11 @@ public class GeminiTriageService {
     }
 
     public TriageResult triage(String category, String title, String description, String location) {
+        return triage(category, title, description, location, List.of());
+    }
+
+    /** Sends the text and any stored image/PDF evidence to Gemini for assessment. */
+    public TriageResult triage(String category, String title, String description, String location, List<Attachment> attachments) {
         if (!appProperties.getGemini().isConfigured()) {
             log.info("GEMINI_API_KEY not set - using keyword-based triage fallback for ticket '{}'.", title);
             return keywordFallback(category, description);
@@ -52,7 +59,7 @@ public class GeminiTriageService {
 
         try {
             String prompt = buildPrompt(category, title, description, location);
-            String responseText = callGemini(prompt);
+            String responseText = callGemini(prompt, attachments);
             TriageResult parsed = parseResponse(responseText);
             if (parsed != null) {
                 return parsed;
@@ -72,7 +79,7 @@ public class GeminiTriageService {
                 with ONLY a JSON object (no markdown, no commentary) with exactly these keys:
 
                 {
-                  "priority": one of "Low", "Medium", "High", "Critical",
+                  "priority": one of "Low", "Medium", "Severe", "Critical",
                   "safetyNote": a short one-sentence safety warning for the tenant if this
                      request involves a real safety hazard (e.g. gas smell, exposed wiring,
                      active flooding, no heat in freezing weather), otherwise an empty string,
@@ -84,7 +91,7 @@ public class GeminiTriageService {
                 - "Critical": immediate danger to health/safety or severe property damage risk
                   (gas leaks, fire hazards, no heat/AC in extreme weather, active flooding,
                   broken locks/exposed entry points).
-                - "High": significant disruption but not immediately dangerous (no hot water,
+                - "Severe": significant disruption but not immediately dangerous (no hot water,
                   major appliance failure, persistent leak).
                 - "Medium": inconvenient but livable (minor leak, single appliance issue).
                 - "Low": cosmetic or non-urgent (squeaky door, light bulb, cosmetic scuff).
@@ -96,7 +103,7 @@ public class GeminiTriageService {
                 """.formatted(category, title, location, description);
     }
 
-    private String callGemini(String prompt) throws Exception {
+    private String callGemini(String prompt, List<Attachment> attachments) throws Exception {
         String model = appProperties.getGemini().getModel();
         String url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
                 .formatted(model, appProperties.getGemini().getApiKey());
@@ -106,6 +113,19 @@ public class GeminiTriageService {
         var contentNode = contents.addObject();
         var parts = contentNode.putArray("parts");
         parts.addObject().put("text", prompt);
+        // Attachments are stored as data URLs by the request form. Gemini receives
+        // the actual evidence, not merely the file name; unsupported attachments
+        // remain represented by the ticket text and labels.
+        for (Attachment attachment : attachments == null ? List.<Attachment>of() : attachments) {
+            String dataUrl = attachment.getDataUrl();
+            if (dataUrl == null || !dataUrl.startsWith("data:") || !dataUrl.contains(";base64,")) continue;
+            int comma = dataUrl.indexOf(',');
+            String mimeType = dataUrl.substring(5, dataUrl.indexOf(';'));
+            String base64 = dataUrl.substring(comma + 1);
+            if (mimeType.startsWith("image/") || "application/pdf".equals(mimeType)) {
+                parts.addObject().putObject("inlineData").put("mimeType", mimeType).put("data", base64);
+            }
+        }
 
         var generationConfig = requestBody.putObject("generationConfig");
         generationConfig.put("responseMimeType", "application/json");
@@ -164,7 +184,7 @@ public class GeminiTriageService {
             return new TriageResult("Critical", "This may be a safety hazard - if you smell gas or see fire/sparking, evacuate and call emergency services.", "Same day");
         }
         if (containsAny(text, "leak", "no hot water", "no water", "broken lock", "not cooling", "not heating", "electrical")) {
-            return new TriageResult("High", "", "1-2 business days");
+            return new TriageResult("Severe", "", "1-2 business days");
         }
         if (containsAny(text, "noisy", "slow drain", "loose", "squeak", "stuck")) {
             return new TriageResult("Low", "", "3-5 business days");

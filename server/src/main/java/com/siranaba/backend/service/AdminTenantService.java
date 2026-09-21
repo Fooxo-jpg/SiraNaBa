@@ -1,6 +1,8 @@
 package com.siranaba.backend.service;
 
 import com.siranaba.backend.dto.AdminTenantResponse;
+import com.siranaba.backend.dto.PresentBillRequest;
+import com.siranaba.backend.dto.PresentBillResponse;
 import com.siranaba.backend.dto.UpdateTenantProfileRequest;
 import com.siranaba.backend.exception.ResourceNotFoundException;
 import com.siranaba.backend.model.Billing;
@@ -27,6 +29,8 @@ import java.util.Locale;
  */
 @Service
 public class AdminTenantService {
+
+    private static final double PARKING_FEE = 1000.0;
 
     private final TenantRepository tenantRepository;
     private final BillingRepository billingRepository;
@@ -99,6 +103,47 @@ public class AdminTenantService {
         notificationRepository.save(note);
 
         return toResponse(tenant);
+    }
+
+    /**
+     * Publishes a standalone utility statement. Utility charges are calculated
+     * from the readings and rates supplied by management; monthly rent is billed
+     * separately and is intentionally not included here. This replaces the
+     * current statement breakdown rather than creating a payment transaction.
+     */
+    public PresentBillResponse presentBill(String tenantId, PresentBillRequest request) {
+        Tenant tenant = find(tenantId);
+        double waterCharge = request.waterUsage() * request.waterRate();
+        double electricityCharge = request.electricityUsage() * request.electricityRate();
+        double parkingCharge = request.parkingFee() ? PARKING_FEE : 0;
+        double total = waterCharge + electricityCharge + parkingCharge;
+
+        Billing billing = billingRepository.findByTenantId(tenantId).orElseGet(() -> Billing.empty(tenantId));
+        billing.setBreakdown(List.of(
+                new Billing.BreakdownLine("Water (" + request.waterUsage() + " m³ × PHP " + request.waterRate() + ")", waterCharge),
+                new Billing.BreakdownLine("Electricity (" + request.electricityUsage() + " kWh × PHP " + request.electricityRate() + ")", electricityCharge),
+                new Billing.BreakdownLine("Parking fee", parkingCharge)
+        ).stream().filter(line -> line.getAmount() > 0).toList());
+        billing.setUtilityBreakdowns(List.of(
+                new Billing.UtilityBreakdown("water", "Water", request.waterUsage(), "m³", "PHP " + request.waterRate() + " / m³", "neutral", 0),
+                new Billing.UtilityBreakdown("electricity", "Electricity", request.electricityUsage(), "kWh", "PHP " + request.electricityRate() + " / kWh", "neutral", 0)
+        ));
+        billingRepository.save(billing);
+
+        tenant.setCurrentBalance(total);
+        tenantRepository.save(tenant);
+
+        NotificationDoc note = new NotificationDoc();
+        note.setTenantId(tenantId);
+        note.setCategory("Payments");
+        note.setTitle("New bill available");
+        note.setBody(String.format(Locale.ENGLISH,
+                "Your new monthly bill of PHP %,.2f is available. Please review the rent and utility breakdown.", total));
+        note.setTimestamp(Instant.now());
+        note.setCta(new Cta("View Billing", "/billing"));
+        notificationRepository.save(note);
+
+        return new PresentBillResponse(tenantId, waterCharge, electricityCharge, parkingCharge, total, tenant.getRentDueDate());
     }
 
     private Tenant find(String tenantId) {

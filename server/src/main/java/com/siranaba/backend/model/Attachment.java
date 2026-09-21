@@ -11,4 +11,6 @@ public class Attachment {
     private String id;
     private String label;
     private String previewUrl;
+    /** Base64 data URL retained so Gemini can inspect tenant-provided media. */
+    private String dataUrl;
 }

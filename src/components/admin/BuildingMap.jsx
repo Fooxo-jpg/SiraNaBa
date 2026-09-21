@@ -190,13 +190,13 @@ export default function BuildingMap() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[auto_1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[21rem_minmax(0,1fr)]">
         {/* Elevation: both towers, every level */}
-        <Card className="p-4">
+        <Card className="min-w-0 p-4">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-700/40">
             Building Elevation · click a level
           </p>
-          <div className="flex justify-center gap-5 overflow-x-auto thin-scrollbar">
+          <div className="flex justify-center gap-3 overflow-x-auto thin-scrollbar">
             {TOWERS.map((t) => (
               <div key={t.id}>
                 <button
@@ -254,7 +254,7 @@ export default function BuildingMap() {
               </div>
             ))}
           </div>
-          <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[10px] text-ink-700/50">
+          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px] text-ink-700/50">
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-forest-500" /> Occupied</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-gray-300" /> Vacant</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-[#E2C7A8]" /> Vacant penthouse</span>

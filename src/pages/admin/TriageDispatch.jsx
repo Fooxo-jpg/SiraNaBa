@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import StatCard from '../../components/admin/StatCard.jsx';
 import Card from '../../components/Card.jsx';
@@ -6,6 +6,9 @@ import Icon from '../../components/Icon.jsx';
 import Modal from '../../components/Modal.jsx';
 import StatusBadge from '../../components/StatusBadge.jsx';
 import { triageDispatch } from '../../data/adminMockDb.js';
+import { endpoints } from '../../api/endpoints.js';
+import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
+import { formatRelativeTime } from '../../utils/format.js';
 
 const CATEGORY_ICON = {
   Plumbing: 'droplet',
@@ -16,10 +19,25 @@ const CATEGORY_ICON = {
 };
 
 export default function TriageDispatch() {
-  const { stats, tickets, totalUnassigned, dispatchedCount, technicians, coordinationHub, coordinator, hazardGuidelines } =
+  const { stats, dispatchedCount, technicians, coordinationHub, coordinator, hazardGuidelines } =
     triageDispatch;
+  const [tickets, setTickets] = useState([]);
+  const [ticketsError, setTicketsError] = useState('');
+  const loadTickets = useCallback(async () => {
+    try {
+      setTickets(await endpoints.getAdminTickets());
+      setTicketsError('');
+    } catch (error) {
+      setTicketsError(error.message || "Couldn't load the dispatch queue.");
+    }
+  }, []);
+  useEffect(() => { loadTickets(); }, [loadTickets]);
+  // Polling keeps the Loading... label in sync when the server-side Gemini
+  // worker completes, without clients calling Gemini themselves.
+  useAutoRefresh(loadTickets);
+  const pendingTickets = tickets.filter((ticket) => ticket.stage !== 'Resolved');
   const TABS = [
-    { id: 'pending', label: 'Pending Review', count: tickets.length },
+    { id: 'pending', label: 'Pending Review', count: pendingTickets.length },
     { id: 'dispatched', label: 'Dispatched', count: dispatchedCount },
     { id: 'completed', label: 'Recently Completed', count: null },
   ];
@@ -29,12 +47,12 @@ export default function TriageDispatch() {
 
   const visibleTickets = useMemo(() => {
     if (tab !== 'pending') return [];
-    if (!query) return tickets;
-    return tickets.filter(
+    if (!query) return pendingTickets;
+    return pendingTickets.filter(
       (t) =>
-        t.subject.toLowerCase().includes(query.toLowerCase()) || t.id.toLowerCase().includes(query.toLowerCase())
+        t.title.toLowerCase().includes(query.toLowerCase()) || t.id.toLowerCase().includes(query.toLowerCase())
     );
-  }, [tab, query, tickets]);
+  }, [tab, query, pendingTickets]);
 
   return (
     <AdminLayout crumb="Triage & Dispatch">
@@ -115,6 +133,8 @@ export default function TriageDispatch() {
             </div>
           </div>
 
+          {ticketsError && <p role="alert" className="mb-3 rounded-md bg-status-highBg px-3 py-2 text-xs text-status-high">{ticketsError}</p>}
+
           {visibleTickets.length > 0 ? (
             <>
               <div className="overflow-x-auto thin-scrollbar">
@@ -134,28 +154,28 @@ export default function TriageDispatch() {
                       <tr key={t.id}>
                         <td className="py-3 pr-3 align-top font-mono text-xs font-semibold text-ink-700/60">{t.id}</td>
                         <td className="py-3 pr-3 align-top">
-                          <p className="font-semibold text-ink-900">{t.subject}</p>
+                          <p className="font-semibold text-ink-900">{t.title}</p>
                           <p className="text-xs text-ink-700/50">{t.location}</p>
                         </td>
                         <td className="py-3 pr-3 align-top">
-                          <StatusBadge label={t.severity} />
+                          <StatusBadge label={t.priority || 'Loading...'} />
                         </td>
                         <td className="py-3 pr-3 align-top">
                           <span className="flex items-center gap-1.5 text-ink-700/70">
                             <Icon name={CATEGORY_ICON[t.category] || 'fileText'} size={14} /> {t.category}
                           </span>
                         </td>
-                        <td className="py-3 pr-3 align-top text-ink-700/60">{t.reported}</td>
+                        <td className="py-3 pr-3 align-top text-ink-700/60">{formatRelativeTime(t.submittedAt)}</td>
                         <td className="py-3 text-right align-top">
-                          {t.assignee ? (
+                          {t.specialist?.name ? (
                             <span className="inline-flex items-center gap-1.5 text-ink-900">
                               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sand-100 text-[9px] font-semibold text-ink-700/60">
-                                {t.assignee
+                                {t.specialist.name
                                   .split(' ')
                                   .map((n) => n[0])
                                   .join('')}
                               </span>
-                              {t.assignee}
+                              {t.specialist.name}
                             </span>
                           ) : (
                             <button
@@ -173,7 +193,7 @@ export default function TriageDispatch() {
               </div>
               <div className="mt-4 flex items-center justify-between text-xs text-ink-700/50">
                 <span>
-                  Showing {visibleTickets.length} of {totalUnassigned} unassigned work orders
+                  Showing {visibleTickets.length} of {pendingTickets.length} work orders
                 </span>
                 <div className="flex gap-2">
                   <button className="rounded-md border border-black/10 px-3 py-1.5 font-medium hover:bg-sand-100 disabled:opacity-40" disabled>
@@ -187,7 +207,7 @@ export default function TriageDispatch() {
             </>
           ) : (
             <p className="py-10 text-center text-sm text-ink-700/50">
-              {tab === 'pending' && tickets.length === 0 ? 'No pending work orders.' : 'No tickets in this view yet.'}
+              {tab === 'pending' && pendingTickets.length === 0 ? 'No pending work orders.' : 'No tickets in this view yet.'}
             </p>
           )}
         </Card>
@@ -296,7 +316,7 @@ export default function TriageDispatch() {
           </>
         }
       >
-        <p className="mb-3 text-sm text-ink-700/70">{assignModal?.subject}</p>
+        <p className="mb-3 text-sm text-ink-700/70">{assignModal?.title}</p>
         <label className="block">
           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-700/50">
             Technician

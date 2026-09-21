@@ -18,6 +18,7 @@ const TONE_MAP = {
   scheduled: 'progress',
   assigned: 'progress',
   loading: 'progress',
+  'loading...': 'progress',
   degraded: 'progress',
   warning: 'progress',
   submitted: 'neutral',
@@ -25,6 +26,7 @@ const TONE_MAP = {
   // priority
   critical: 'danger',
   high: 'danger',
+  severe: 'danger',
   medium: 'progress',
   low: 'neutral',
   // payment / account states

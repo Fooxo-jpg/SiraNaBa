@@ -1,6 +1,8 @@
 package com.siranaba.backend.controller;
 
 import com.siranaba.backend.dto.AdminTenantResponse;
+import com.siranaba.backend.dto.PresentBillRequest;
+import com.siranaba.backend.dto.PresentBillResponse;
 import com.siranaba.backend.dto.RegisterTenantRequest;
 import com.siranaba.backend.dto.RegisterTenantResponse;
 import com.siranaba.backend.dto.UpdateTenantProfileRequest;
@@ -43,6 +45,14 @@ public class AdminTenantController {
     @PostMapping("/{tenantId}/mark-paid")
     public AdminTenantResponse markPaid(@PathVariable String tenantId) {
         return adminTenantService.markPaid(tenantId);
+    }
+
+    /** Issues the tenant's current monthly statement with meter-based utility charges. */
+    @PostMapping("/{tenantId}/bills")
+    @ResponseStatus(HttpStatus.CREATED)
+    public PresentBillResponse presentBill(@PathVariable String tenantId,
+                                           @Valid @RequestBody PresentBillRequest request) {
+        return adminTenantService.presentBill(tenantId, request);
     }
 
     @PostMapping

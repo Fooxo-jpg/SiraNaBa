@@ -36,6 +36,8 @@ const EMPTY_FORM = () => ({
 const inputCls =
   'w-full rounded-md border border-black/10 bg-sand-50 px-3 py-2 text-sm outline-none focus:border-forest-400';
 
+const DEFAULT_USAGE = { waterUsage: '', waterRate: '60', electricityUsage: '', electricityRate: '12', parkingFee: false };
+
 function initials(name) {
   return name
     .split(' ')
@@ -98,6 +100,12 @@ export default function TenantManagement() {
   const [editForm, setEditForm] = useState({ firstName: '', lastName: '', email: '', phone: '' });
   const [editError, setEditError] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+
+  // Clicking a tenant opens their profile and a small billing workbench.
+  const [billTarget, setBillTarget] = useState(null);
+  const [utilityForm, setUtilityForm] = useState(DEFAULT_USAGE);
+  const [billError, setBillError] = useState('');
+  const [presentingBill, setPresentingBill] = useState(false);
 
   // Payments made by tenants (from the database, same records as the tenant's Billing page).
   const [payments, setPayments] = useState([]);
@@ -174,9 +182,10 @@ export default function TenantManagement() {
     );
   }, [tenants, query, typeFilter, paymentFilter]);
 
-  // Vacant rooms for the selected unit type + tower, grouped by floor for the dropdown.
+  // All vacant rooms in the selected building, grouped by floor for the dropdown.
+  // The room itself determines its type and rent after it is selected.
   const vacantOptions = useMemo(() => {
-    const rooms = vacantRooms({ type: form.type, tower: form.tower, occupiedIds });
+    const rooms = vacantRooms({ tower: form.tower, occupiedIds });
     const groups = [];
     rooms.forEach((r) => {
       const label = levelByKey(r.levelKey).label;
@@ -187,15 +196,6 @@ export default function TenantManagement() {
     // Lowest floor first reads more naturally in a dropdown than the map's top-down order.
     return { count: rooms.length, groups: groups.reverse() };
   }, [form.type, form.tower, occupiedIds]);
-
-  // "Studio (88 vacant)" - counts across both towers.
-  const vacantByType = useMemo(() => {
-    const counts = Object.fromEntries(UNIT_TYPES.map((t) => [t, 0]));
-    ALL_ROOMS.forEach((r) => {
-      if (!occupiedIds.has(r.id)) counts[r.type] += 1;
-    });
-    return counts;
-  }, [occupiedIds]);
 
   const openModal = (roomId = '') => {
     const room = roomById(roomId);
@@ -306,6 +306,47 @@ export default function TenantManagement() {
     setEditForm({ firstName: t.firstName, lastName: t.lastName, email: t.email, phone: t.phone });
     setEditError('');
     setEditTarget(t);
+  };
+
+  const openTenantProfile = (t) => {
+    setMenuId(null);
+    setBillTarget(t);
+    setUtilityForm(DEFAULT_USAGE);
+    setBillError('');
+  };
+
+  const utilityTotals = useMemo(() => {
+    const water = Math.max(0, Number(utilityForm.waterUsage) || 0) * Math.max(0, Number(utilityForm.waterRate) || 0);
+    const electricity = Math.max(0, Number(utilityForm.electricityUsage) || 0) * Math.max(0, Number(utilityForm.electricityRate) || 0);
+    const parking = utilityForm.parkingFee ? 1000 : 0;
+    return { water, electricity, parking, total: water + electricity + parking };
+  }, [billTarget, utilityForm]);
+
+  const presentBill = async (e) => {
+    e.preventDefault();
+    if (!billTarget || presentingBill) return;
+    const values = ['waterUsage', 'waterRate', 'electricityUsage', 'electricityRate'];
+    if (values.some((key) => utilityForm[key] === '' || Number(utilityForm[key]) < 0 || !Number.isFinite(Number(utilityForm[key])))) {
+      setBillError('Enter zero or a positive number for each meter reading and rate.');
+      return;
+    }
+    setPresentingBill(true);
+    setBillError('');
+    try {
+      const receipt = await endpoints.presentTenantBill(billTarget.accountId, {
+        waterUsage: Number(utilityForm.waterUsage), waterRate: Number(utilityForm.waterRate),
+        electricityUsage: Number(utilityForm.electricityUsage), electricityRate: Number(utilityForm.electricityRate),
+        parkingFee: utilityForm.parkingFee,
+      });
+      await reload();
+      pushActivity({ icon: 'card', tone: 'success', title: 'Bill Presented', detail: `${billTarget.name}'s statement for ${formatPhp(receipt.totalDue)} was issued.` });
+      setBillTarget(null);
+      setNotice({ tone: 'success', text: `Bill presented to ${billTarget.name} for ${formatPhp(receipt.totalDue)}. They can now review it in Billing & Payments.` });
+    } catch (err) {
+      setBillError(err.message || 'Could not present this bill. Please try again.');
+    } finally {
+      setPresentingBill(false);
+    }
   };
 
   const saveEdit = async (e) => {
@@ -469,7 +510,7 @@ export default function TenantManagement() {
               </thead>
               <tbody className="divide-y divide-black/5">
                 {filtered.map((t) => (
-                  <tr key={t.id}>
+                  <tr key={t.id} className="cursor-pointer hover:bg-sand-50/70" onClick={() => openTenantProfile(t)}>
                     <td className="py-3 pr-3">
                       <span className="flex items-center gap-2.5">
                         <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-forest-100 text-[10px] font-semibold text-forest-700">
@@ -505,7 +546,7 @@ export default function TenantManagement() {
                     <td className="py-3 pr-3"><StatusBadge label={t.account} /></td>
                     <td className="relative py-3 text-right">
                       <button
-                        onClick={() => setMenuId(menuId === t.id ? null : t.id)}
+                        onClick={(e) => { e.stopPropagation(); setMenuId(menuId === t.id ? null : t.id); }}
                         aria-label={`Actions for ${t.name}`}
                         className="rounded-md p-1 text-ink-700/50 hover:bg-sand-100"
                       >
@@ -515,6 +556,9 @@ export default function TenantManagement() {
                         <>
                           <button aria-label="Close menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setMenuId(null)} />
                           <div className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-lg border border-black/10 bg-white text-left shadow-lg">
+                            <button onClick={() => openTenantProfile(t)} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-sand-100">
+                              <Icon name="users" size={14} /> View profile & bill
+                            </button>
                             <button onClick={() => openEdit(t)} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-sand-100">
                               <Icon name="pencil" size={14} /> Edit Details
                             </button>
@@ -673,6 +717,95 @@ export default function TenantManagement() {
           </Card>
         </div>
       </div>
+
+      <Modal
+        open={!!billTarget}
+        onClose={() => setBillTarget(null)}
+        title="Tenant profile & billing"
+        maxWidth="max-w-2xl"
+        footer={
+          <>
+            <button onClick={() => setBillTarget(null)} className="rounded-md px-4 py-2 text-sm font-medium hover:bg-sand-100">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="present-tenant-bill"
+              disabled={presentingBill}
+              className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:opacity-60"
+            >
+              {presentingBill ? 'Presenting…' : 'Present Bill'}
+            </button>
+          </>
+        }
+      >
+        {billTarget && (
+          <form id="present-tenant-bill" onSubmit={presentBill} className="space-y-5">
+            <section className="rounded-lg border border-black/5 bg-sand-50 p-4">
+              <div className="mb-3 flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-forest-100 text-xs font-bold text-forest-700">
+                  {initials(billTarget.name)}
+                </span>
+                <div>
+                  <p className="font-semibold text-ink-900">{billTarget.name}</p>
+                  <p className="text-xs text-ink-700/60">{billTarget.id} · Tower {billTarget.tower}, Unit {billTarget.unit}</p>
+                </div>
+              </div>
+              <dl className="grid grid-cols-1 gap-x-5 gap-y-2 text-xs sm:grid-cols-2">
+                <div><dt className="text-ink-700/50">Email</dt><dd className="font-medium text-ink-900">{billTarget.email || '—'}</dd></div>
+                <div><dt className="text-ink-700/50">Phone</dt><dd className="font-medium text-ink-900">{billTarget.phone || '—'}</dd></div>
+                <div><dt className="text-ink-700/50">Unit type</dt><dd className="font-medium text-ink-900">{billTarget.type || '—'}</dd></div>
+                <div><dt className="text-ink-700/50">Lease start</dt><dd className="font-medium text-ink-900">{billTarget.leaseStart ? formatDate(billTarget.leaseStart + 'T00:00:00') : '—'}</dd></div>
+              </dl>
+            </section>
+
+            <section>
+              <div className="mb-3">
+                <h3 className="font-semibold text-ink-900">Add Utility Usage</h3>
+                <p className="text-xs text-ink-700/60">Enter the meter readings and approved rates. Charges update as you type.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                <div className="space-y-3 rounded-lg border border-black/5 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-700/50">Usage</p>
+                  <Field label="Water (m³)">
+                    <input type="number" min="0" step="0.01" value={utilityForm.waterUsage} onChange={(e) => setUtilityForm({ ...utilityForm, waterUsage: e.target.value })} className={inputCls} placeholder="0.00" />
+                  </Field>
+                  <Field label="Electricity (kWh)">
+                    <input type="number" min="0" step="0.01" value={utilityForm.electricityUsage} onChange={(e) => setUtilityForm({ ...utilityForm, electricityUsage: e.target.value })} className={inputCls} placeholder="0.00" />
+                  </Field>
+                </div>
+                <div className="space-y-3 rounded-lg border border-black/5 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-700/50">Rates</p>
+                  <Field label="Water (PHP / m³)">
+                    <input type="number" min="0" step="0.01" value={utilityForm.waterRate} onChange={(e) => setUtilityForm({ ...utilityForm, waterRate: e.target.value })} className={inputCls} />
+                  </Field>
+                  <Field label="Electricity (PHP / kWh)">
+                    <input type="number" min="0" step="0.01" value={utilityForm.electricityRate} onChange={(e) => setUtilityForm({ ...utilityForm, electricityRate: e.target.value })} className={inputCls} />
+                  </Field>
+                </div>
+                <div className="space-y-3 rounded-lg bg-sand-50 p-3 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-700/50">Breakdown</p>
+                  <div className="flex items-center justify-between"><span className="text-ink-700/60">Water</span><span className="font-semibold">{formatPhp(utilityTotals.water)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-ink-700/60">Electricity</span><span className="font-semibold">{formatPhp(utilityTotals.electricity)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-ink-700/60">Parking</span><span className="font-semibold">{formatPhp(utilityTotals.parking)}</span></div>
+                  <div className="flex items-center justify-between border-t border-black/10 pt-2"><span className="font-semibold text-ink-900">Utility total</span><span className="font-bold text-forest-700">{formatPhp(utilityTotals.total)}</span></div>
+                </div>
+              </div>
+            </section>
+
+            <label className="flex cursor-pointer items-center justify-between rounded-lg border border-black/10 p-3">
+              <span><span className="block font-semibold text-ink-900">Parking Fee</span><span className="text-xs text-ink-700/60">Add fixed PHP 1,000.00 / month</span></span>
+              <input type="checkbox" checked={utilityForm.parkingFee} onChange={(e) => setUtilityForm({ ...utilityForm, parkingFee: e.target.checked })} className="h-4 w-4 accent-forest-600" />
+            </label>
+
+            <div className="flex items-center justify-between rounded-lg bg-forest-700 px-4 py-3 text-white">
+              <span className="text-sm font-medium">Present bill total</span>
+              <span className="text-xl font-bold">{formatPhp(utilityTotals.total)}</span>
+            </div>
+            {billError && <p role="alert" className="rounded-md bg-status-highBg px-3 py-2 text-xs text-status-high">{billError}</p>}
+          </form>
+        )}
+      </Modal>
 
       <Modal
         open={!!payTarget}
@@ -841,21 +974,8 @@ export default function TenantManagement() {
 
           <div>
             <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-ink-700/40">Location & Lease</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Unit Type">
-                <select
-                  value={form.type}
-                  onChange={(e) => setForm({ ...form, type: e.target.value, roomId: '' })}
-                  className={inputCls}
-                >
-                  {UNIT_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Tower">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(8rem,1fr)_minmax(0,3fr)]">
+              <Field label="Building">
                 <select
                   value={form.tower}
                   onChange={(e) => setForm({ ...form, tower: Number(e.target.value), roomId: '' })}
@@ -875,7 +995,10 @@ export default function TenantManagement() {
               >
                 <select
                   value={form.roomId}
-                  onChange={(e) => setForm({ ...form, roomId: e.target.value })}
+                  onChange={(e) => {
+                    const room = roomById(e.target.value);
+                    setForm({ ...form, roomId: e.target.value, type: room?.type || form.type });
+                  }}
                   disabled={vacantOptions.count === 0}
                   className={inputCls}
                 >
@@ -884,7 +1007,7 @@ export default function TenantManagement() {
                     <optgroup key={g.label} label={g.label}>
                       {g.rooms.map((r) => (
                         <option key={r.id} value={r.id}>
-                          {r.name}
+                          {r.name} · Vacant
                         </option>
                       ))}
                     </optgroup>
@@ -903,10 +1026,10 @@ export default function TenantManagement() {
               </Field>
               <Field
                 label="Monthly Rent (PHP)"
-                hint={`Fixed rate for ${form.type} units.`}
+                hint={form.roomId ? `Fixed rate for the selected ${form.type} unit.` : 'Select a vacant room to view its rate.'}
               >
                 <input
-                  value={formatPhp(RENT_BY_TYPE[form.type])}
+                  value={form.roomId ? formatPhp(RENT_BY_TYPE[form.type]) : '—'}
                   readOnly
                   tabIndex={-1}
                   aria-readonly="true"

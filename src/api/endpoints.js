@@ -10,6 +10,7 @@ export const endpoints = {
   getTicket: (id) => api.get(`/api/tickets/${id}`),
   createTicket: (payload) => api.post('/api/tickets', payload),
   updateTicket: (id, payload) => api.patch(`/api/tickets/${id}`, payload),
+  getAdminTickets: () => api.get('/api/admin/tickets'),
 
   getBilling: () => api.get('/api/billing'),
   addPaymentMethod: (payload) => api.post('/api/billing/payment-methods', payload),
@@ -28,6 +29,9 @@ export const endpoints = {
   // Creates the tenant record + login and emails the credentials.
   registerTenant: (payload) => api.post('/api/admin/tenants', payload),
   updateAdminTenant: (tenantId, payload) => api.patch(`/api/admin/tenants/${tenantId}`, payload),
+  // Issues a monthly statement with metered utilities. The tenant sees the same
+  // balance and breakdown in Billing & Payments immediately after refresh.
+  presentTenantBill: (tenantId, payload) => api.post(`/api/admin/tenants/${tenantId}/bills`, payload),
   markTenantPaid: (tenantId) => api.post(`/api/admin/tenants/${tenantId}/mark-paid`),
   // Admin: payments made in the tenant portal (reference code, mode, time) and saved payment methods.
   getAdminRecentPayments: (limit = 10) => api.get(`/api/admin/payments?limit=${limit}`),

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import Card from '../components/Card.jsx';
@@ -9,6 +9,7 @@ import AttachmentGrid from '../components/AttachmentGrid.jsx';
 import { LoadingState, ErrorState } from '../components/Common.jsx';
 import { endpoints } from '../api/endpoints.js';
 import { formatDate, formatTime } from '../utils/format.js';
+import { useAutoRefresh } from '../utils/useAutoRefresh.js';
 
 const STAGES = ['Submitted', 'Assigned', 'In Progress', 'Resolved'];
 
@@ -19,7 +20,7 @@ export default function TicketDetail() {
   const [tab, setTab] = useState('overview');
   const [modal, setModal] = useState(null); // 'message' | 'call' | 'chatAdmin' | 'escalate'
 
-  const load = () => {
+  const load = useCallback(() => {
     setStatus('loading');
     endpoints
       .getTicket(id)
@@ -28,9 +29,10 @@ export default function TicketDetail() {
         setStatus('ready');
       })
       .catch(() => setStatus('error'));
-  };
+  }, [id]);
 
-  useEffect(load, [id]);
+  useEffect(() => { load(); }, [load]);
+  useAutoRefresh(load);
 
   const withdrawTicket = () => {
     if (!ticket) return;
@@ -41,7 +43,7 @@ export default function TicketDetail() {
     if (!ticket) return;
     const updated = [
       ...(ticket.attachments || []),
-      ...items.map(({ id, name, previewUrl }) => ({ id, label: name, previewUrl })),
+      ...items.map(({ id, name, previewUrl, dataUrl }) => ({ id, label: name, previewUrl, dataUrl })),
     ];
     endpoints.updateTicket(ticket.id, { attachments: updated }).then(load);
   };
@@ -54,8 +56,8 @@ export default function TicketDetail() {
 
   const stageIndex = ticket ? STAGES.indexOf(ticket.stage) : -1;
   const isLive = ticket?.stage === 'In Progress';
-  const isUrgent = ticket?.priority === 'High';
-  const isPending = ticket && !ticket.priority;
+  const isUrgent = ['Severe', 'Critical'].includes(ticket?.priority);
+  const isPending = ticket?.priority === 'Loading...' || !ticket?.priority;
   const hasSpecialist = ticket?.specialist && ticket.specialist.name !== 'Unassigned';
   const firstName = ticket?.specialist?.name?.split(' ')[0] || 'the technician';
 
@@ -91,7 +93,7 @@ export default function TicketDetail() {
               )}
               {isPending && (
                 <span className="flex items-center gap-1.5 rounded-full bg-status-progressBg px-3 py-1 text-xs font-semibold text-status-progress">
-                  <Icon name="clock" size={12} /> Severity: Loading
+                  <Icon name="clock" size={12} /> Severity: Loading...
                 </span>
               )}
               {isUrgent && (

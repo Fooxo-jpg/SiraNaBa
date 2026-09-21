@@ -63,10 +63,11 @@ export default function SubmitRequest() {
         title: form.title,
         description: form.description,
         location: form.location,
-        attachments: form.attachments.map(({ id, name, previewUrl }) => ({
+        attachments: form.attachments.map(({ id, name, previewUrl, dataUrl }) => ({
           id,
           label: name,
           previewUrl,
+          dataUrl,
         })),
       });
       navigate('/maintenance');

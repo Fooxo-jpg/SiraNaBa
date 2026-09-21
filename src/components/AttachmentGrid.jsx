@@ -7,23 +7,31 @@ export const MAX_ATTACHMENTS = 5;
 // blob: URL, so it only lasts for the current browser session - good enough
 // for this in-memory mock, but a real backend integration should replace it
 // with an uploaded file URL.
-export function filesToAttachments(fileList) {
-  return Array.from(fileList).map((file, i) => ({
+export async function filesToAttachments(fileList) {
+  return Promise.all(Array.from(fileList).map(async (file, i) => ({
     id: `att_${Date.now()}_${i}`,
     name: file.name,
     type: file.type,
     previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-  }));
+    // Persist the media with the ticket so queued server-side Gemini triage can
+    // inspect it after the browser's temporary blob URL has expired.
+    dataUrl: await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    }),
+  })));
 }
 
 export default function AttachmentGrid({ attachments = [], onAdd, onRemove, max = MAX_ATTACHMENTS }) {
   const inputRef = useRef(null);
   const atLimit = attachments.length >= max;
 
-  const handleChange = (e) => {
+  const handleChange = async (e) => {
     const remaining = Math.max(0, max - attachments.length);
     const picked = Array.from(e.target.files).slice(0, remaining);
-    if (picked.length) onAdd(filesToAttachments(picked));
+    if (picked.length) onAdd(await filesToAttachments(picked));
     e.target.value = '';
   };
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import Card from '../components/Card.jsx';
@@ -7,6 +7,7 @@ import StatusBadge from '../components/StatusBadge.jsx';
 import { LoadingState, ErrorState } from '../components/Common.jsx';
 import { endpoints } from '../api/endpoints.js';
 import { formatRelativeTime } from '../utils/format.js';
+import { useAutoRefresh } from '../utils/useAutoRefresh.js';
 
 export default function Maintenance() {
   const [tickets, setTickets] = useState([]);
@@ -14,7 +15,7 @@ export default function Maintenance() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('loading');
 
-  const load = () => {
+  const load = useCallback(() => {
     setStatus('loading');
     endpoints
       .getTickets()
@@ -24,9 +25,12 @@ export default function Maintenance() {
         setStatus('ready');
       })
       .catch(() => setStatus('error'));
-  };
+  }, []);
 
-  useEffect(load, []);
+  useEffect(() => { load(); }, [load]);
+  // The server processes Gemini triage in a rate-limited queue. Refresh this
+  // shared ticket state so Loading... changes to the final severity in-place.
+  useAutoRefresh(load);
 
   const activeTickets = useMemo(
     () =>
@@ -98,7 +102,7 @@ export default function Maintenance() {
                         <div className="min-w-0">
                           <div className="mb-1 flex items-center gap-2">
                             <span className="text-xs font-medium text-ink-700/50">{t.id}</span>
-                            <StatusBadge label={t.priority || 'Loading'} />
+                            <StatusBadge label={t.priority || 'Loading...'} />
                             {t.stage === 'In Progress' && (
                               <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-forest-600">
                                 <span className="h-1.5 w-1.5 rounded-full bg-forest-500" /> Live

@@ -9,5 +9,7 @@ import java.util.Optional;
 public interface TicketRepository extends MongoRepository<Ticket, String> {
     List<Ticket> findByTenantIdOrderBySubmittedAtDesc(String tenantId);
     Optional<Ticket> findByIdAndTenantId(String id, String tenantId);
+    Optional<Ticket> findFirstByPriorityOrderBySubmittedAtAsc(String priority);
+    List<Ticket> findAllByOrderBySubmittedAtAsc();
     long countByTenantIdAndStageNot(String tenantId, String stage);
 }

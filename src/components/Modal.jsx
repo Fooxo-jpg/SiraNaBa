@@ -32,9 +32,9 @@ export default function Modal({ open, onClose, title, children, footer, maxWidth
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`w-full ${maxWidth} rounded-card bg-white p-6 shadow-xl outline-none`}
+        className={`flex max-h-[calc(100vh-2rem)] w-full ${maxWidth} flex-col overflow-hidden rounded-card bg-white shadow-xl outline-none`}
       >
-        <div className="mb-4 flex items-start justify-between">
+        <div className="mb-4 flex flex-shrink-0 items-start justify-between px-6 pt-6">
           <h2 className="text-lg font-semibold text-ink-900">{title}</h2>
           <button
             onClick={onClose}
@@ -44,8 +44,8 @@ export default function Modal({ open, onClose, title, children, footer, maxWidth
             <Icon name="close" size={18} />
           </button>
         </div>
-        <div className="text-sm text-ink-900">{children}</div>
-        {footer && <div className="mt-6 flex justify-end gap-3">{footer}</div>}
+        <div className="min-h-0 overflow-y-auto px-6 text-sm text-ink-900 thin-scrollbar">{children}</div>
+        {footer && <div className="mt-6 flex flex-shrink-0 justify-end gap-3 border-t border-black/5 px-6 py-4">{footer}</div>}
       </div>
     </div>
   );
