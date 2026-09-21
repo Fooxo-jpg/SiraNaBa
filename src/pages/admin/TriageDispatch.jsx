@@ -18,6 +18,16 @@ const CATEGORY_ICON = {
   General: 'fileText',
 };
 
+function formatTowerRoom(location) {
+  const value = String(location || '');
+  const room = value.match(/(?:unit|room|#)?\s*(\d{1,4})\b/i)?.[1] || '—';
+  const towerToken = value.match(/(?:tower|building|block)\s*([a-z0-9]+)/i)?.[1];
+  const tower = towerToken
+    ? (/^\d+$/.test(towerToken) ? towerToken : String(towerToken.charCodeAt(0) - 64))
+    : '1';
+  return room === '—' ? value || '—' : `${tower}-${room}`;
+}
+
 export default function TriageDispatch() {
   const { stats, dispatchedCount, technicians, coordinationHub, coordinator, hazardGuidelines } =
     triageDispatch;
@@ -35,24 +45,74 @@ export default function TriageDispatch() {
   // Polling keeps the Loading... label in sync when the server-side Gemini
   // worker completes, without clients calling Gemini themselves.
   useAutoRefresh(loadTickets);
-  const pendingTickets = tickets.filter((ticket) => ticket.stage !== 'Resolved');
+  const isAssigned = (ticket) => ticket.specialist?.name && ticket.specialist.name !== 'Unassigned';
+  const pendingTickets = tickets.filter((ticket) => !isAssigned(ticket) && ticket.stage !== 'Resolved');
+  const dispatchedTickets = tickets.filter((ticket) => isAssigned(ticket) && !['Fixed Problem', 'Cancelled'].includes(ticket.dispatchStatus));
+  const completedTickets = tickets.filter((ticket) => isAssigned(ticket) && ['Fixed Problem', 'Cancelled'].includes(ticket.dispatchStatus));
   const TABS = [
     { id: 'pending', label: 'Pending Review', count: pendingTickets.length },
-    { id: 'dispatched', label: 'Dispatched', count: dispatchedCount },
-    { id: 'completed', label: 'Recently Completed', count: null },
+    { id: 'dispatched', label: 'Dispatched', count: dispatchedTickets.length },
+    { id: 'completed', label: 'Recently Completed', count: completedTickets.length },
   ];
   const [tab, setTab] = useState('pending');
   const [query, setQuery] = useState('');
   const [assignModal, setAssignModal] = useState(null); // ticket object
+  const [quickDispatchOpen, setQuickDispatchOpen] = useState(false);
+  const [unassignedTickets, setUnassignedTickets] = useState([]);
+  const [dispatchStaff, setDispatchStaff] = useState([]);
+  const [dispatchSelections, setDispatchSelections] = useState({});
+  const [dispatchLoading, setDispatchLoading] = useState(false);
+  const [dispatchingTicketId, setDispatchingTicketId] = useState(null);
+  const [dispatchError, setDispatchError] = useState('');
+
+  const openQuickDispatch = async () => {
+    setQuickDispatchOpen(true);
+    setDispatchLoading(true);
+    setDispatchError('');
+    try {
+      const [allTickets, staff] = await Promise.all([endpoints.getAdminTickets(), endpoints.getStaff()]);
+      setUnassignedTickets(allTickets.filter((ticket) => !ticket.specialist || ticket.specialist.name === 'Unassigned'));
+      setDispatchStaff(staff);
+    } catch (error) {
+      setDispatchError(error.message || "Couldn't load the unassigned ticket queue.");
+    } finally {
+      setDispatchLoading(false);
+    }
+  };
+
+  const dispatchTicket = async (ticket) => {
+    const staffId = dispatchSelections[ticket.id];
+    if (!staffId) return;
+    setDispatchingTicketId(ticket.id);
+    setDispatchError('');
+    try {
+      const updatedTicket = await endpoints.assignAdminTicket(ticket.id, staffId);
+      setTickets((current) => current.map((item) => (item.id === ticket.id ? updatedTicket : item)));
+      setUnassignedTickets((current) => current.filter((item) => item.id !== ticket.id));
+    } catch (error) {
+      setDispatchError(error.message || 'Could not assign this ticket. It may have just been assigned elsewhere.');
+    } finally {
+      setDispatchingTicketId(null);
+    }
+  };
 
   const visibleTickets = useMemo(() => {
-    if (tab !== 'pending') return [];
-    if (!query) return pendingTickets;
-    return pendingTickets.filter(
+    const tabTickets = tab === 'pending' ? pendingTickets : tab === 'dispatched' ? dispatchedTickets : completedTickets;
+    if (!query) return tabTickets;
+    return tabTickets.filter(
       (t) =>
         t.title.toLowerCase().includes(query.toLowerCase()) || t.id.toLowerCase().includes(query.toLowerCase())
     );
   }, [tab, query, pendingTickets]);
+
+  const updateDispatchStatus = async (ticket, status) => {
+    try {
+      const updated = await endpoints.updateAdminDispatchStatus(ticket.id, status);
+      setTickets((current) => current.map((item) => (item.id === ticket.id ? updated : item)));
+    } catch (error) {
+      setTicketsError(error.message || "Couldn't update the dispatch status.");
+    }
+  };
 
   return (
     <AdminLayout crumb="Triage & Dispatch">
@@ -79,7 +139,7 @@ export default function TriageDispatch() {
                 ))}
               </div>
             )}
-            <button className="flex items-center gap-1.5 rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600">
+            <button onClick={openQuickDispatch} className="flex items-center gap-1.5 rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600">
               <Icon name="wrench" size={15} /> Quick Dispatch
             </button>
           </div>
@@ -143,10 +203,12 @@ export default function TriageDispatch() {
                     <tr className="text-left text-xs font-semibold uppercase tracking-wide text-ink-700/40">
                       <th className="pb-2 pr-3">Ticket ID</th>
                       <th className="pb-2 pr-3">Subject &amp; Location</th>
+                      <th className="pb-2 pr-3">Tower / Room</th>
                       <th className="pb-2 pr-3">Severity</th>
                       <th className="pb-2 pr-3">Category</th>
                       <th className="pb-2 pr-3">Reported</th>
                       <th className="pb-2 text-right">Assignment</th>
+                      {tab === 'dispatched' && <th className="pb-2 pl-3 text-right">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-black/5">
@@ -156,6 +218,9 @@ export default function TriageDispatch() {
                         <td className="py-3 pr-3 align-top">
                           <p className="font-semibold text-ink-900">{t.title}</p>
                           <p className="text-xs text-ink-700/50">{t.location}</p>
+                        </td>
+                        <td className="py-3 pr-3 align-top font-mono text-xs font-semibold text-ink-700/70">
+                          {formatTowerRoom(t.location)}
                         </td>
                         <td className="py-3 pr-3 align-top">
                           <StatusBadge label={t.priority || 'Loading...'} />
@@ -167,7 +232,7 @@ export default function TriageDispatch() {
                         </td>
                         <td className="py-3 pr-3 align-top text-ink-700/60">{formatRelativeTime(t.submittedAt)}</td>
                         <td className="py-3 text-right align-top">
-                          {t.specialist?.name ? (
+                          {t.specialist?.name && t.specialist.name !== 'Unassigned' ? (
                             <span className="inline-flex items-center gap-1.5 text-ink-900">
                               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sand-100 text-[9px] font-semibold text-ink-700/60">
                                 {t.specialist.name
@@ -176,6 +241,7 @@ export default function TriageDispatch() {
                                   .join('')}
                               </span>
                               {t.specialist.name}
+                              {t.dispatchStatus && <StatusBadge label={t.dispatchStatus} />}
                             </span>
                           ) : (
                             <button
@@ -186,6 +252,15 @@ export default function TriageDispatch() {
                             </button>
                           )}
                         </td>
+                        {tab === 'dispatched' && (
+                          <td className="py-3 pl-3 text-right align-top">
+                            <div className="flex justify-end gap-1">
+                              <button onClick={() => updateDispatchStatus(t, 'Fixed Problem')} className="rounded border border-forest-200 px-2 py-1 text-[10px] font-semibold text-forest-700 hover:bg-forest-50">Fixed Problem</button>
+                              <button onClick={() => updateDispatchStatus(t, 'Escalated')} className="rounded border border-status-high/30 px-2 py-1 text-[10px] font-semibold text-status-high hover:bg-status-highBg">Escalate</button>
+                              <button onClick={() => updateDispatchStatus(t, 'Cancelled')} className="rounded border border-black/10 px-2 py-1 text-[10px] font-semibold text-ink-700/60 hover:bg-sand-100">Cancelled</button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -293,6 +368,46 @@ export default function TriageDispatch() {
           </div>
         </div>
       </div>
+
+      <Modal open={quickDispatchOpen} onClose={() => setQuickDispatchOpen(false)} title="Quick Dispatch — Unassigned Tickets">
+        <p className="mb-4 text-sm text-ink-700/60">Select the maintenance staff member for each unassigned work order. This updates the ticket status to Assigned.</p>
+        {dispatchError && <p role="alert" className="mb-3 rounded-md bg-status-highBg p-3 text-xs text-status-high">{dispatchError}</p>}
+        {dispatchLoading && <p className="py-6 text-center text-sm text-ink-700/50">Loading unassigned tickets…</p>}
+        {!dispatchLoading && unassignedTickets.length === 0 && (
+          <p className="rounded-md bg-forest-50 p-4 text-sm text-forest-700">No unassigned tickets are waiting for dispatch.</p>
+        )}
+        <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1 thin-scrollbar">
+          {unassignedTickets.map((ticket) => (
+            <div key={ticket.id} className="rounded-lg border border-black/10 p-3">
+              <div className="mb-3">
+                <p className="text-xs font-semibold text-forest-700">{ticket.id} · {ticket.category}</p>
+                <p className="mt-0.5 text-sm font-semibold text-ink-900">{ticket.title}</p>
+                <p className="mt-0.5 text-xs text-ink-700/60">{ticket.location}</p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select
+                  value={dispatchSelections[ticket.id] || ''}
+                  onChange={(event) => setDispatchSelections((current) => ({ ...current, [ticket.id]: event.target.value }))}
+                  aria-label={`Assign staff to ${ticket.id}`}
+                  className="min-w-0 flex-1 rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-forest-400"
+                >
+                  <option value="">Select maintenance staff…</option>
+                  {dispatchStaff.map((staff) => (
+                    <option key={staff.id} value={staff.id}>{staff.name} — {staff.specialty} ({staff.workload}%)</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => dispatchTicket(ticket)}
+                  disabled={!dispatchSelections[ticket.id] || dispatchingTicketId === ticket.id}
+                  className="rounded-md bg-forest-500 px-3 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {dispatchingTicketId === ticket.id ? 'Assigning…' : 'Assign'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Modal>
 
       <Modal
         open={!!assignModal}

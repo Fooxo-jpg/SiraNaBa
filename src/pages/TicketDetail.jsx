@@ -11,7 +11,7 @@ import { endpoints } from '../api/endpoints.js';
 import { formatDate, formatTime } from '../utils/format.js';
 import { useAutoRefresh } from '../utils/useAutoRefresh.js';
 
-const STAGES = ['Submitted', 'Assigned', 'In Progress', 'Resolved'];
+const STAGES = ['Submitted', 'Assigned', 'Resolved'];
 
 export default function TicketDetail() {
   const { id } = useParams();
@@ -54,8 +54,11 @@ export default function TicketDetail() {
     endpoints.updateTicket(ticket.id, { attachments: updated }).then(load);
   };
 
-  const stageIndex = ticket ? STAGES.indexOf(ticket.stage) : -1;
-  const isLive = ticket?.stage === 'In Progress';
+  // Older tickets may still carry the retired In Progress value; display them
+  // at the Assigned step rather than leaving the tracker without a current step.
+  const displayStage = ticket?.stage === 'In Progress' ? 'Assigned' : ticket?.stage;
+  const stageIndex = ticket ? STAGES.indexOf(displayStage) : -1;
+  const isLive = false;
   const isUrgent = ['Severe', 'Critical'].includes(ticket?.priority);
   const isPending = ticket?.priority === 'Loading...' || !ticket?.priority;
   const hasSpecialist = ticket?.specialist && ticket.specialist.name !== 'Unassigned';
@@ -144,6 +147,19 @@ export default function TicketDetail() {
                 </React.Fragment>
               ))}
             </div>
+            {hasSpecialist && (
+              <div className="mt-6 flex items-center gap-3 rounded-lg border border-forest-200 bg-forest-50 p-3.5">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white text-forest-600 shadow-sm">
+                  <Icon name="wrench" size={16} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-forest-700">Assigned maintenance staff</p>
+                  <p className="truncate text-sm font-semibold text-ink-900">{ticket.specialist.name}</p>
+                  <p className="truncate text-xs text-ink-700/60">{ticket.specialist.title} · {ticket.specialist.phone || 'Contact details pending'}</p>
+                </div>
+                <span className="ml-auto rounded-full bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-forest-700">Assigned</span>
+              </div>
+            )}
           </Card>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

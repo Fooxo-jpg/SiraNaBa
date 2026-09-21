@@ -6,6 +6,7 @@ import Icon from '../../components/Icon.jsx';
 import Modal from '../../components/Modal.jsx';
 import { staffManagement } from '../../data/adminMockDb.js';
 import { endpoints } from '../../api/endpoints.js';
+import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
 
 const PAGE_SIZE = 8;
 
@@ -84,6 +85,15 @@ export default function StaffManagement() {
       cancelled = true;
     };
   }, []);
+
+  // Ticket triage can assign work from the tenant portal, so refresh this
+  // shared workforce source of truth while the dashboard is open.
+  useAutoRefresh(() => {
+    endpoints
+      .getStaff()
+      .then(setStaff)
+      .catch((err) => setLoadError(err.message || 'Could not refresh staff.'));
+  }, { intervalMs: 5000 });
 
   const online = staff.filter((s) => s.availability === 'online');
   const highCapacity = staff.filter((s) => s.workload >= 75).length;
@@ -524,6 +534,7 @@ export default function StaffManagement() {
           </div>
         </form>
       </Modal>
+
     </AdminLayout>
   );
 }

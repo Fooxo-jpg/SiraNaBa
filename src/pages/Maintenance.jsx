@@ -14,6 +14,7 @@ export default function Maintenance() {
   const [serviceHealth, setServiceHealth] = useState(null);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('loading');
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = useCallback(() => {
     setStatus('loading');
@@ -32,12 +33,14 @@ export default function Maintenance() {
   // shared ticket state so Loading... changes to the final severity in-place.
   useAutoRefresh(load);
 
-  const activeTickets = useMemo(
+  const activeTickets = useMemo(() => tickets.filter((ticket) => ticket.stage !== 'Resolved'), [tickets]);
+  const archivedTickets = useMemo(() => tickets.filter((ticket) => ticket.stage === 'Resolved'), [tickets]);
+  const displayedTickets = useMemo(
     () =>
-      tickets.filter(
+      (showArchived ? archivedTickets : activeTickets).filter(
         (t) => !query || t.title.toLowerCase().includes(query.toLowerCase()) || t.id.toLowerCase().includes(query.toLowerCase())
       ),
-    [tickets, query]
+    [activeTickets, archivedTickets, query, showArchived]
   );
 
   return (
@@ -72,9 +75,9 @@ export default function Maintenance() {
             <div className="lg:col-span-2">
               <Card className="p-5">
                 <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-semibold text-ink-900">Active Requests</h2>
+                  <h2 className="font-semibold text-ink-900">{showArchived ? 'Archived Tickets' : 'Active Requests'}</h2>
                   <span className="rounded-full bg-sand-100 px-2 py-0.5 text-xs font-semibold text-ink-700/60">
-                    {tickets.length}
+                    {(showArchived ? archivedTickets : activeTickets).length}
                   </span>
                 </div>
                 <label className="relative mb-3 block">
@@ -93,7 +96,7 @@ export default function Maintenance() {
                 </label>
 
                 <ul className="space-y-1.5">
-                  {activeTickets.map((t) => (
+                  {displayedTickets.map((t) => (
                     <li key={t.id}>
                       <Link
                         to={`/maintenance/${t.id}`}
@@ -120,8 +123,11 @@ export default function Maintenance() {
                   ))}
                 </ul>
 
-                <button className="mt-4 block w-full text-center text-sm font-medium text-forest-600 hover:underline">
-                  View Archived Tickets ›
+                {displayedTickets.length === 0 && (
+                  <p className="py-6 text-center text-sm text-ink-700/50">No {showArchived ? 'archived' : 'active'} tickets.</p>
+                )}
+                <button onClick={() => setShowArchived((value) => !value)} className="mt-4 block w-full text-center text-sm font-medium text-forest-600 hover:underline">
+                  {showArchived ? '‹ Back to Active Requests' : `View Archived Tickets (${archivedTickets.length}) ›`}
                 </button>
               </Card>
             </div>

@@ -24,12 +24,14 @@ public class TicketService {
     private final TicketRepository ticketRepository;
     private final TenantContext tenantContext;
     private final TicketTriageQueue ticketTriageQueue;
+    private final TicketDispatchService ticketDispatchService;
 
     public TicketService(TicketRepository ticketRepository, TenantContext tenantContext,
-                          TicketTriageQueue ticketTriageQueue) {
+                          TicketTriageQueue ticketTriageQueue, TicketDispatchService ticketDispatchService) {
         this.ticketRepository = ticketRepository;
         this.tenantContext = tenantContext;
         this.ticketTriageQueue = ticketTriageQueue;
+        this.ticketDispatchService = ticketDispatchService;
     }
 
     public TicketListResponse list() {
@@ -80,6 +82,7 @@ public class TicketService {
 
     public Ticket update(String id, UpdateTicketRequest request) {
         Ticket ticket = get(id);
+        boolean newlyResolved = "Resolved".equals(request.stage()) && !"Resolved".equals(ticket.getStage());
 
         if (request.category() != null) ticket.setCategory(request.category());
         if (request.title() != null) ticket.setTitle(request.title());
@@ -91,6 +94,14 @@ public class TicketService {
         if (request.safetyNote() != null) ticket.setSafetyNote(request.safetyNote());
         if (request.specialist() != null) ticket.setSpecialist(request.specialist());
         if (request.attachments() != null) ticket.setAttachments(request.attachments());
+
+        // A resolution can be initiated outside the admin dispatch buttons
+        // (for example, from the tenant ticket view). Always release the
+        // assigned technician's active-ticket count and workload in that case.
+        if (newlyResolved && ticket.getSpecialist() != null
+                && !"Unassigned".equalsIgnoreCase(ticket.getSpecialist().getName())) {
+            ticketDispatchService.release(ticket);
+        }
 
         ticket.setUpdatedAt(Instant.now());
         return ticketRepository.save(ticket);

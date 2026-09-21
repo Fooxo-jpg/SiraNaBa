@@ -32,14 +32,19 @@ public class Ticket {
     /** Null while AI triage / assessment is still pending -> UI renders "Severity: Loading". */
     private String priority;
 
-    /** Submitted | Assigned | In Progress | Resolved */
+    /** Submitted | Assigned | Resolved */
     private String stage = "Submitted";
+
+    /** Admin dispatch outcome: Assigned | Fixed Problem | Escalated | Cancelled. */
+    private String dispatchStatus = "Assigned";
 
     private Instant submittedAt;
     private Instant updatedAt;
     private String estimatedCompletion;
 
     private Specialist specialist = Specialist.unassigned();
+    /** Staff record that owns the assignment; used to release workload on completion. */
+    private String assignedStaffId;
     private List<Attachment> attachments = new ArrayList<>();
     private String safetyNote = "";
     private List<TimelineEvent> timeline = new ArrayList<>();
