@@ -130,7 +130,7 @@ public class BillingService {
         return withTenantFields(billingRepository.save(billing), tenant);
     }
 
-    // ---- Pay the balance (demo gateway: always succeeds) -----------------
+    // ---- Pay the balance --------------------------------------------------
 
     public PaymentReceipt pay(PayRequest req) {
         Tenant tenant = tenantContext.currentTenant();
@@ -155,6 +155,31 @@ public class BillingService {
 
         Instant paidAt = Instant.now();
         String reference = PaymentReferences.next(paidAt);
+
+        // Test scenario: every GCash attempt is declined. Persist it exactly
+        // like a gateway response so it appears in both the tenant history and
+        // the admin transaction/audit log, while leaving the balance untouched.
+        if (mode.startsWith("GCash")) {
+            List<Billing.Transaction> transactions = new ArrayList<>(billing.getTransactions());
+            transactions.add(0, new Billing.Transaction(reference, "Rent payment (test failure)",
+                    paidAt.atZone(MANILA).toLocalDate().toString(), amount, "Failed", mode, paidAt));
+            billing.setTransactions(transactions);
+            billing.setTotalTransactionCount(billing.getTotalTransactionCount() + 1);
+            billingRepository.save(billing);
+
+            NotificationDoc note = new NotificationDoc();
+            note.setTenantId(tenant.getId());
+            note.setCategory("Payments");
+            note.setTitle("Payment failed");
+            note.setBody(String.format(Locale.ENGLISH,
+                    "Your test payment of PHP %,.2f via %s was declined. No funds were collected. Reference code: %s.",
+                    amount, mode, reference));
+            note.setTimestamp(paidAt);
+            note.setCta(new Cta("View Billing", "/billing"));
+            notificationRepository.save(note);
+
+            return new PaymentReceipt(reference, paidAt, mode, amount, "Failed");
+        }
 
         tenant.setCurrentBalance(0);
         tenantRepository.save(tenant);

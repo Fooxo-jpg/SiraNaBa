@@ -10,6 +10,7 @@ import com.siranaba.backend.service.AdminTenantService;
 import com.siranaba.backend.service.TenantRegistrationService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -47,12 +48,13 @@ public class AdminTenantController {
         return adminTenantService.markPaid(tenantId);
     }
 
-    /** Issues the tenant's current monthly statement with meter-based utility charges. */
+    /** Creates this month's utility statement, or updates it when it already exists. */
     @PostMapping("/{tenantId}/bills")
-    @ResponseStatus(HttpStatus.CREATED)
-    public PresentBillResponse presentBill(@PathVariable String tenantId,
-                                           @Valid @RequestBody PresentBillRequest request) {
-        return adminTenantService.presentBill(tenantId, request);
+    public ResponseEntity<PresentBillResponse> presentBill(@PathVariable String tenantId,
+                                                            @Valid @RequestBody PresentBillRequest request) {
+        PresentBillResponse response = adminTenantService.presentBill(tenantId, request);
+        return ResponseEntity.status(response.updatedExistingStatement() || response.unchanged() ? HttpStatus.OK : HttpStatus.CREATED)
+                .body(response);
     }
 
     @PostMapping

@@ -83,8 +83,8 @@ public class GeminiTriageService {
                   "safetyNote": a short one-sentence safety warning for the tenant if this
                      request involves a real safety hazard (e.g. gas smell, exposed wiring,
                      active flooding, no heat in freezing weather), otherwise an empty string,
-                  "estimatedCompletion": a short human-readable estimate such as
-                     "Same day", "1-2 business days", or "3-5 business days"
+                  "estimatedCompletion": an empty string; response timing is calculated by the portal
+                     from the live maintenance queue
                 }
 
                 Guidance:
@@ -159,7 +159,7 @@ public class GeminiTriageService {
             String priority = node.path("priority").asText("Medium");
             priority = normalizePriority(priority);
             String safetyNote = node.path("safetyNote").asText("");
-            String estimatedCompletion = node.path("estimatedCompletion").asText("2-3 business days");
+            String estimatedCompletion = node.path("estimatedCompletion").asText("");
             return new TriageResult(priority, safetyNote, estimatedCompletion);
         } catch (Exception ex) {
             return null;
@@ -181,15 +181,15 @@ public class GeminiTriageService {
         String text = (category + " " + description).toLowerCase(Locale.ROOT);
 
         if (containsAny(text, "gas", "smoke", "fire", "flood", "no heat", "exposed wire", "sparking", "carbon monoxide")) {
-            return new TriageResult("Critical", "This may be a safety hazard - if you smell gas or see fire/sparking, evacuate and call emergency services.", "Same day");
+            return new TriageResult("Critical", "This may be a safety hazard - if you smell gas or see fire/sparking, evacuate and call emergency services.", "");
         }
         if (containsAny(text, "leak", "no hot water", "no water", "broken lock", "not cooling", "not heating", "electrical")) {
-            return new TriageResult("Severe", "", "1-2 business days");
+            return new TriageResult("Severe", "", "");
         }
         if (containsAny(text, "noisy", "slow drain", "loose", "squeak", "stuck")) {
-            return new TriageResult("Low", "", "3-5 business days");
+            return new TriageResult("Low", "", "");
         }
-        return new TriageResult("Medium", "", "2-3 business days");
+        return new TriageResult("Medium", "", "");
     }
 
     private boolean containsAny(String text, String... keywords) {

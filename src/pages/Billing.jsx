@@ -5,7 +5,7 @@ import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import DataTable from '../components/DataTable.jsx';
-import { ProgressBar, LoadingState, ErrorState } from '../components/Common.jsx';
+import { LoadingState, ErrorState } from '../components/Common.jsx';
 import { useSession } from '../context/SessionContext.jsx';
 import { endpoints } from '../api/endpoints.js';
 import { formatPhp, formatDate } from '../utils/format.js';
@@ -20,21 +20,16 @@ import {
   methodSubtitle,
 } from '../components/billing/PaymentParts.jsx';
 
-const UTILITY_ICON = { electricity: 'bolt', water: 'droplet', internet: 'wifi', facility: 'shield' };
-const UTILITY_TONE = {
-  electricity: 'text-amber-500 bg-amber-50',
-  water: 'text-sky-500 bg-sky-50',
-  internet: 'text-violet-500 bg-violet-50',
-  facility: 'text-forest-600 bg-forest-50',
-};
-
 const TABS = ['All Transactions', 'Rent Only', 'Utilities', 'Failed'];
 
-const PAYMENT_LIMITS = [
-  { icon: 'clock', label: 'Daily Transaction Limit', value: '₱5,000.00' },
-  { icon: 'calendar', label: 'Monthly Transaction Limit', value: '₱20,000.00' },
-  { icon: 'card', label: 'Per-Transaction Limit', value: '₱10,000.00' },
-];
+function daysUntilDue(dateString) {
+  if (!dateString) return null;
+  const due = new Date(`${dateString.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(due.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((due - today) / 86_400_000);
+}
 
 const BILLING_FAQS = [
   {
@@ -116,6 +111,8 @@ export default function Billing() {
 
   const methods = billing?.paymentMethods || [];
   const activeMethod = methods.find((m) => m.isPrimary) || methods[0];
+  const daysToDue = daysUntilDue(billing?.dueDate);
+  const balanceVisible = billing?.currentBalanceDue <= 0 || (daysToDue !== null && daysToDue <= 7);
 
   const filteredTransactions = billing
     ? billing.transactions.filter((t) => {
@@ -162,14 +159,14 @@ export default function Billing() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="p-6">
               <StatusBadge
-                label={billing.currentBalanceDue <= 0 ? 'All Paid' : 'Upcoming Payment'}
+                label={billing.currentBalanceDue <= 0 ? 'All Paid' : balanceVisible ? 'Upcoming Payment' : 'Scheduled Payment'}
                 tone={billing.currentBalanceDue <= 0 ? 'success' : 'progress'}
               />
               <p className="mt-3 text-xs font-medium uppercase tracking-wide text-ink-700/50">
                 Current Balance Due
               </p>
               <p className="text-3xl font-bold text-ink-900">
-                {formatPhp(billing.currentBalanceDue)}
+                {balanceVisible ? formatPhp(billing.currentBalanceDue) : '—'}
               </p>
               <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-700/50">
                 <span className="flex items-center gap-1">
@@ -179,6 +176,7 @@ export default function Billing() {
                   <Icon name="check" size={13} /> Auto-pay {billing.autoPayActive ? 'Active' : 'Off'}
                 </span>
               </p>
+              {balanceVisible && (
               <div className="mt-4">
                 <button
                   onClick={() => setModal('pay')}
@@ -188,6 +186,7 @@ export default function Billing() {
                   {billing.currentBalanceDue <= 0 ? 'No Balance Due' : 'Pay Total Now'}
                 </button>
               </div>
+              )}
             </Card>
 
             <Card className="p-6">
@@ -200,11 +199,28 @@ export default function Billing() {
               <ul className="space-y-2.5 text-sm">
                 {billing.breakdown.map((line) => (
                   <li key={line.label} className="flex items-center justify-between">
-                    <span className="text-ink-700/70">{line.label}</span>
+                    <span className="flex items-center gap-2 text-ink-700/70">
+                      {line.label.toLowerCase().startsWith('water') && <Icon name="droplet" size={14} className="text-sky-500" />}
+                      {line.label.toLowerCase().startsWith('electricity') && <Icon name="bolt" size={14} className="text-amber-500" />}
+                      {line.label}
+                    </span>
                     <span className="font-semibold text-ink-900">{formatPhp(line.amount)}</span>
                   </li>
                 ))}
               </ul>
+              {billing.utilityBreakdowns.length > 0 && (
+                <div className="mt-4 border-t border-black/5 pt-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">Current meter readings</p>
+                  <div className="space-y-2 text-xs text-ink-700/60">
+                    {billing.utilityBreakdowns.map((u) => (
+                      <div key={u.id} className="flex items-center justify-between">
+                        <span>{u.label}</span>
+                        <span className="font-medium text-ink-900">{u.value !== null ? `${u.value.toLocaleString()} ${u.unit}` : '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <p className="mt-4 text-xs leading-relaxed text-ink-700/40">
                 * Utilities are estimated based on previous month usage. Final adjustment applied to
                 invoice.
@@ -236,61 +252,12 @@ export default function Billing() {
                 >
                   Manage Payment Methods <Icon name="chevronRight" size={15} />
                 </button>
-                <button
-                  onClick={() => setModal('limits')}
-                  className="flex w-full items-center justify-between py-2.5 text-ink-900 hover:text-forest-600"
-                >
-                  View Payment Limits <Icon name="chevronRight" size={15} />
-                </button>
               </div>
               <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-700/40">
                 <Icon name="shield" size={13} /> Secure payments powered by SagePay
               </p>
             </Card>
           </div>
-
-          <Card className="p-6">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-ink-900">Utility Breakdowns</h2>
-                <p className="text-xs text-ink-700/50">Usage tracking for the current billing cycle</p>
-              </div>
-              <button className="text-sm font-medium text-forest-600 hover:underline">
-                Detailed Consumption Report
-              </button>
-            </div>
-            {billing.utilityBreakdowns.length === 0 && (
-              <p className="text-sm text-ink-700/50">No utility usage recorded yet.</p>
-            )}
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              {billing.utilityBreakdowns.map((u) => (
-                <div key={u.id} className="rounded-lg border border-black/5 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div
-                      className={`flex h-8 w-8 items-center justify-center rounded-lg ${UTILITY_TONE[u.id]}`}
-                    >
-                      <Icon name={UTILITY_ICON[u.id]} size={15} />
-                    </div>
-                    <span
-                      className={`text-xs font-medium ${
-                        u.trend === 'up' ? 'text-status-high' : u.trend === 'down' ? 'text-forest-600' : 'text-ink-700/50'
-                      }`}
-                    >
-                      {u.trend === 'up' ? '↗' : u.trend === 'down' ? '↘' : '→'} {u.deltaLabel}
-                    </span>
-                  </div>
-                  <p className="text-xs font-medium text-ink-700/50">{u.label}</p>
-                  <p className="mb-2 text-xl font-bold text-ink-900">
-                    {u.value !== null ? `${u.value.toLocaleString()} ${u.unit}` : u.unit}
-                  </p>
-                  <ProgressBar value={u.usageVsLimit * 100} max={100} />
-                  <p className="mt-1 text-[11px] text-ink-700/40">
-                    Usage vs limit {Math.round(u.usageVsLimit * 100)}%
-                  </p>
-                </div>
-              ))}
-            </div>
-          </Card>
 
           <Card className="p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -432,32 +399,6 @@ export default function Billing() {
         />
 
         <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />
-
-        {/* View Payment Limits */}
-        <Modal open={modal === 'limits'} onClose={closeModal} title="View Payment Limits">
-          <p className="mb-4 text-sm text-ink-700/60">
-            These limits apply to payments made through your account for security purposes.
-          </p>
-          <div className="space-y-2.5">
-            {PAYMENT_LIMITS.map((row) => (
-              <div
-                key={row.label}
-                className="flex items-center justify-between rounded-lg border border-black/5 p-3"
-              >
-                <span className="flex items-center gap-2.5 text-sm text-ink-700/70">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-sand-100 text-ink-700/60">
-                    <Icon name={row.icon} size={15} />
-                  </span>
-                  {row.label}
-                </span>
-                <span className="text-sm font-semibold text-ink-900">{row.value}</span>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 flex items-center gap-1.5 text-xs text-ink-700/40">
-            <Icon name="info" size={13} /> Need a higher limit? Contact billing support to request an increase.
-          </p>
-        </Modal>
 
         {/* Billing FAQ */}
         <Modal open={modal === 'faq'} onClose={closeModal} title="Billing FAQ">

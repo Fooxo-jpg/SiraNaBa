@@ -32,11 +32,15 @@ public class Ticket {
     /** Null while AI triage / assessment is still pending -> UI renders "Severity: Loading". */
     private String priority;
 
-    /** Submitted | Assigned | Resolved */
+    /** Submitted | Assigned | In Progress | Resolved | Cancelled */
     private String stage = "Submitted";
 
-    /** Admin dispatch outcome: Assigned | Fixed Problem | Escalated | Cancelled. */
+    /** Admin workflow: Coordinating | Dispatched | Fixed Problem | Escalated | Cancelled. */
     private String dispatchStatus = "Assigned";
+
+    /** Tenant unit snapshot captured when the ticket is created, for dispatch. */
+    private int tower;
+    private String unit;
 
     private Instant submittedAt;
     private Instant updatedAt;

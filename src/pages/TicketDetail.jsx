@@ -11,14 +11,12 @@ import { endpoints } from '../api/endpoints.js';
 import { formatDate, formatTime } from '../utils/format.js';
 import { useAutoRefresh } from '../utils/useAutoRefresh.js';
 
-const STAGES = ['Submitted', 'Assigned', 'Resolved'];
-
 export default function TicketDetail() {
   const { id } = useParams();
   const [ticket, setTicket] = useState(null);
   const [status, setStatus] = useState('loading');
   const [tab, setTab] = useState('overview');
-  const [modal, setModal] = useState(null); // 'message' | 'call' | 'chatAdmin' | 'escalate'
+  const [modal, setModal] = useState(null); // 'message' | 'call' | 'chatAdmin' | 'cancel'
 
   const load = useCallback(() => {
     setStatus('loading');
@@ -34,9 +32,12 @@ export default function TicketDetail() {
   useEffect(() => { load(); }, [load]);
   useAutoRefresh(load);
 
-  const withdrawTicket = () => {
+  const cancelTicket = () => {
     if (!ticket) return;
-    endpoints.updateTicket(ticket.id, { stage: 'Resolved' }).then(load);
+    endpoints.updateTicket(ticket.id, { stage: 'Cancelled' }).then(() => {
+      setModal(null);
+      load();
+    });
   };
 
   const addAttachments = (items) => {
@@ -54,15 +55,17 @@ export default function TicketDetail() {
     endpoints.updateTicket(ticket.id, { attachments: updated }).then(load);
   };
 
-  // Older tickets may still carry the retired In Progress value; display them
-  // at the Assigned step rather than leaving the tracker without a current step.
-  const displayStage = ticket?.stage === 'In Progress' ? 'Assigned' : ticket?.stage;
-  const stageIndex = ticket ? STAGES.indexOf(displayStage) : -1;
-  const isLive = false;
+  const displayStage = ticket?.stage;
+  // Keep a four-step tracker. The terminal step changes label for a cancelled
+  // request instead of adding a fifth circle after Resolved.
+  const stages = ['Submitted', 'Assigned', 'In Progress', ticket?.stage === 'Cancelled' ? 'Cancelled' : 'Resolved'];
+  const stageIndex = ticket ? stages.indexOf(displayStage) : -1;
+  const isLive = ticket?.stage === 'In Progress';
   const isUrgent = ['Severe', 'Critical'].includes(ticket?.priority);
   const isPending = ticket?.priority === 'Loading...' || !ticket?.priority;
   const hasSpecialist = ticket?.specialist && ticket.specialist.name !== 'Unassigned';
   const firstName = ticket?.specialist?.name?.split(' ')[0] || 'the technician';
+  const isHistoryTicket = ['Resolved', 'Cancelled'].includes(ticket?.stage);
 
   return (
     <Layout crumb={`Maintenance / ${id}`}>
@@ -110,7 +113,7 @@ export default function TicketDetail() {
           {/* Stage tracker */}
           <Card className="p-6">
             <div className="flex items-center">
-              {STAGES.map((stage, i) => (
+              {stages.map((stage, i) => (
                 <React.Fragment key={stage}>
                   <div className="flex flex-col items-center gap-1.5">
                     <div
@@ -141,7 +144,7 @@ export default function TicketDetail() {
                       <span className="text-[10px] font-bold uppercase tracking-wide text-forest-500">Live</span>
                     )}
                   </div>
-                  {i < STAGES.length - 1 && (
+                  {i < stages.length - 1 && (
                     <div className={`mx-1 h-0.5 flex-1 ${i < stageIndex ? 'bg-forest-500' : 'bg-black/10'}`} />
                   )}
                 </React.Fragment>
@@ -244,7 +247,7 @@ export default function TicketDetail() {
                           <Icon name="info" size={14} /> Safety Note: {ticket.safetyNote}
                         </p>
                         <button
-                          onClick={withdrawTicket}
+                          onClick={() => setModal('cancel')}
                           className="text-xs font-semibold text-status-high hover:underline"
                         >
                           Withdraw Request
@@ -354,7 +357,7 @@ export default function TicketDetail() {
                 </div>
               </Card>
 
-              <div>
+              {!isHistoryTicket && <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">Quick Actions</p>
                 <div className="grid grid-cols-2 gap-3">
                   <button
@@ -364,13 +367,15 @@ export default function TicketDetail() {
                     <Icon name="chat" size={17} /> Chat Admin
                   </button>
                   <button
-                    onClick={() => setModal('escalate')}
+                    onClick={() => setModal('cancel')}
+                    disabled={['Resolved', 'Cancelled'].includes(ticket.stage)}
                     className="flex flex-col items-center gap-1 rounded-lg border border-status-high/20 py-3 text-xs font-medium text-status-high hover:bg-status-highBg"
                   >
-                    <Icon name="alert" size={17} /> Escalate
+                    <Icon name="close" size={17} /> Cancel Request
                   </button>
                 </div>
               </div>
+              }
 
               {isLive && (
                 <Card className="flex items-start gap-2.5 border border-forest-200 bg-forest-50 p-4 shadow-none">
@@ -460,11 +465,11 @@ export default function TicketDetail() {
         />
       </Modal>
 
-      {/* Escalate */}
+      {/* Cancel request */}
       <Modal
-        open={modal === 'escalate'}
+        open={modal === 'cancel'}
         onClose={() => setModal(null)}
-        title="Escalate This Ticket"
+        title="Cancel This Ticket"
         footer={
           <>
             <button
@@ -474,17 +479,17 @@ export default function TicketDetail() {
               Cancel
             </button>
             <button
-              onClick={() => setModal(null)}
+              onClick={cancelTicket}
               className="rounded-md bg-status-high px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90"
             >
-              Escalate
+              Cancel Request
             </button>
           </>
         }
       >
         <p className="text-sm text-ink-700/70">
-          This will flag your request for the property manager's immediate attention. Use this if
-          the issue is urgent or hasn't progressed within the expected time.
+          Are you sure you want to cancel this maintenance request? Any assigned staff will be
+          released and the ticket will be closed.
         </p>
       </Modal>
     </Layout>

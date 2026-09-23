@@ -33,6 +33,8 @@ public class Billing {
     /** Saved payment methods: cards, e-wallets (GCash, Maya) and online banking. */
     private List<PaymentMethod> paymentMethods = new ArrayList<>();
     private List<UtilityBreakdown> utilityBreakdowns = new ArrayList<>();
+    /** YYYY-MM for the utility statement currently shown to the tenant. */
+    private String utilityStatementPeriod;
     private List<Transaction> transactions = new ArrayList<>();
     private int totalTransactionCount;
 

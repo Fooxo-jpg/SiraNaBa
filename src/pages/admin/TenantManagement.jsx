@@ -36,7 +36,10 @@ const EMPTY_FORM = () => ({
 const inputCls =
   'w-full rounded-md border border-black/10 bg-sand-50 px-3 py-2 text-sm outline-none focus:border-forest-400';
 
-const DEFAULT_USAGE = { waterUsage: '', waterRate: '60', electricityUsage: '', electricityRate: '12', parkingFee: false };
+// Meralco's published September 2026 residential reference rate. Update this
+// monthly when Meralco publishes the next residential rate.
+const MERALCO_RESIDENTIAL_RATE = '14.7424';
+const DEFAULT_USAGE = { waterUsage: '', waterRate: '60', electricityUsage: '', electricityRate: MERALCO_RESIDENTIAL_RATE, parkingFee: false };
 
 function initials(name) {
   return name
@@ -106,6 +109,7 @@ export default function TenantManagement() {
   const [utilityForm, setUtilityForm] = useState(DEFAULT_USAGE);
   const [billError, setBillError] = useState('');
   const [presentingBill, setPresentingBill] = useState(false);
+  const [loadingUsage, setLoadingUsage] = useState(false);
 
   // Payments made by tenants (from the database, same records as the tenant's Billing page).
   const [payments, setPayments] = useState([]);
@@ -308,11 +312,34 @@ export default function TenantManagement() {
     setEditTarget(t);
   };
 
-  const openTenantProfile = (t) => {
+  const openTenantProfile = async (t) => {
     setMenuId(null);
     setBillTarget(t);
     setUtilityForm(DEFAULT_USAGE);
     setBillError('');
+    setLoadingUsage(true);
+    try {
+      const billing = await endpoints.getAdminTenantPayments(t.accountId);
+      const water = billing.utilityBreakdowns?.find((item) => item.id === 'water');
+      const electricity = billing.utilityBreakdowns?.find((item) => item.id === 'electricity');
+      const rateFrom = (item, fallback) => {
+        const match = item?.deltaLabel?.match(/PHP\\s+([0-9.]+)/i);
+        return match ? match[1] : fallback;
+      };
+      if (water || electricity) {
+        setUtilityForm({
+          waterUsage: water?.value?.toString() ?? '',
+          waterRate: rateFrom(water, DEFAULT_USAGE.waterRate),
+          electricityUsage: electricity?.value?.toString() ?? '',
+          electricityRate: MERALCO_RESIDENTIAL_RATE,
+          parkingFee: billing.breakdown?.some((line) => line.label === 'Parking fee' && line.amount > 0) ?? false,
+        });
+      }
+    } catch (err) {
+      setBillError(err.message || "Couldn't load the saved utility usage.");
+    } finally {
+      setLoadingUsage(false);
+    }
   };
 
   const utilityTotals = useMemo(() => {
@@ -339,9 +366,17 @@ export default function TenantManagement() {
         parkingFee: utilityForm.parkingFee,
       });
       await reload();
-      pushActivity({ icon: 'card', tone: 'success', title: 'Bill Presented', detail: `${billTarget.name}'s statement for ${formatPhp(receipt.totalDue)} was issued.` });
+      if (receipt.unchanged) {
+        setBillTarget(null);
+        setNotice({ tone: 'success', text: `No changes were made to ${billTarget.name}'s current billing-period statement.` });
+        return;
+      }
+      const action = receipt.updatedExistingStatement ? 'Bill Updated' : 'Bill Presented';
+      pushActivity({ icon: 'card', tone: 'success', title: action, detail: `${billTarget.name}'s ${receipt.billingPeriod} statement for ${formatPhp(receipt.totalDue)} was ${receipt.updatedExistingStatement ? 'updated' : 'issued'}.` });
       setBillTarget(null);
-      setNotice({ tone: 'success', text: `Bill presented to ${billTarget.name} for ${formatPhp(receipt.totalDue)}. They can now review it in Billing & Payments.` });
+      setNotice({ tone: 'success', text: receipt.updatedExistingStatement
+        ? `${billTarget.name}'s current billing-period statement was updated to ${formatPhp(receipt.totalDue)}.`
+        : `Bill presented to ${billTarget.name} for ${formatPhp(receipt.totalDue)}. They can now review it in Billing & Payments.` });
     } catch (err) {
       setBillError(err.message || 'Could not present this bill. Please try again.');
     } finally {
@@ -734,7 +769,7 @@ export default function TenantManagement() {
               disabled={presentingBill}
               className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:opacity-60"
             >
-              {presentingBill ? 'Presenting…' : 'Present Bill'}
+              {presentingBill ? 'Saving…' : 'Save Utility Usage'}
             </button>
           </>
         }
@@ -762,7 +797,9 @@ export default function TenantManagement() {
             <section>
               <div className="mb-3">
                 <h3 className="font-semibold text-ink-900">Add Utility Usage</h3>
-                <p className="text-xs text-ink-700/60">Enter the meter readings and approved rates. Charges update as you type.</p>
+                <p className="text-xs text-ink-700/60">
+                  {loadingUsage ? 'Loading saved utility usage…' : 'Previously saved usage is shown below. Saving again this billing period updates the existing statement.'}
+                </p>
               </div>
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                 <div className="space-y-3 rounded-lg border border-black/5 p-3">
@@ -779,8 +816,8 @@ export default function TenantManagement() {
                   <Field label="Water (PHP / m³)">
                     <input type="number" min="0" step="0.01" value={utilityForm.waterRate} onChange={(e) => setUtilityForm({ ...utilityForm, waterRate: e.target.value })} className={inputCls} />
                   </Field>
-                  <Field label="Electricity (PHP / kWh)">
-                    <input type="number" min="0" step="0.01" value={utilityForm.electricityRate} onChange={(e) => setUtilityForm({ ...utilityForm, electricityRate: e.target.value })} className={inputCls} />
+                  <Field label="Electricity (PHP / kWh)" hint="Meralco residential reference rate — September 2026">
+                    <input type="number" value={MERALCO_RESIDENTIAL_RATE} readOnly className={`${inputCls} cursor-not-allowed text-ink-700/60`} />
                   </Field>
                 </div>
                 <div className="space-y-3 rounded-lg bg-sand-50 p-3 text-sm">
@@ -799,7 +836,7 @@ export default function TenantManagement() {
             </label>
 
             <div className="flex items-center justify-between rounded-lg bg-forest-700 px-4 py-3 text-white">
-              <span className="text-sm font-medium">Present bill total</span>
+              <span className="text-sm font-medium">Current period total</span>
               <span className="text-xl font-bold">{formatPhp(utilityTotals.total)}</span>
             </div>
             {billError && <p role="alert" className="rounded-md bg-status-highBg px-3 py-2 text-xs text-status-high">{billError}</p>}

@@ -26,13 +26,15 @@ public class TicketTriageQueue {
     private final TicketRepository ticketRepository;
     private final GeminiTriageService geminiTriageService;
     private final TicketDispatchService ticketDispatchService;
+    private final ResponseTimeEstimator responseTimeEstimator;
     private final AtomicBoolean processing = new AtomicBoolean(false);
 
     public TicketTriageQueue(TicketRepository ticketRepository, GeminiTriageService geminiTriageService,
-                             TicketDispatchService ticketDispatchService) {
+                             TicketDispatchService ticketDispatchService, ResponseTimeEstimator responseTimeEstimator) {
         this.ticketRepository = ticketRepository;
         this.geminiTriageService = geminiTriageService;
         this.ticketDispatchService = ticketDispatchService;
+        this.responseTimeEstimator = responseTimeEstimator;
     }
 
     @Scheduled(fixedDelayString = "${app.gemini.triage-delay-ms:1500}", initialDelay = 500)
@@ -45,15 +47,17 @@ public class TicketTriageQueue {
             TriageResult result = geminiTriageService.triage(
                     ticket.getCategory(), ticket.getTitle(), ticket.getDescription(), ticket.getLocation(), ticket.getAttachments());
             Instant now = Instant.now();
+            ResponseTimeEstimator.Estimate estimate = responseTimeEstimator.forTicket(ticket, result.priority());
             ticket.setPriority(result.priority());
             ticket.setSafetyNote(result.safetyNote());
-            ticket.setEstimatedCompletion(result.estimatedCompletion());
+            ticket.setEstimatedCompletion(estimate.window());
             ticket.setUpdatedAt(now);
             var timeline = new ArrayList<>(ticket.getTimeline());
             timeline.add(new TimelineEvent(
                     "tl_" + UUID.randomUUID(),
                     "AI severity evaluated",
-                    "Gemini assessed this request as " + result.priority() + ".",
+                    "Gemini assessed this request as " + result.priority() + ". Expected response: "
+                            + estimate.window() + queueContext(estimate.waitingAhead()),
                     now));
             if (!assign(ticket, timeline, now)) {
                 timeline.add(new TimelineEvent(
@@ -99,7 +103,7 @@ public class TicketTriageQueue {
             ticket.setSpecialist(ticketDispatchService.specialistFor(staff, ticket.getEstimatedCompletion()));
             ticket.setAssignedStaffId(staff.getId());
             ticket.setStage("Assigned");
-            ticket.setDispatchStatus("Assigned");
+            ticket.setDispatchStatus("Coordinating");
             timeline.add(new TimelineEvent(
                     "tl_" + UUID.randomUUID(),
                     "Maintenance staff assigned",
@@ -112,7 +116,7 @@ public class TicketTriageQueue {
     private boolean isDispatchableUnassigned(Ticket ticket) {
         String specialistName = ticket.getSpecialist() == null ? null : ticket.getSpecialist().getName();
         return !QUEUED_PRIORITY.equals(ticket.getPriority())
-                && !"Resolved".equals(ticket.getStage())
+                && !"Resolved".equals(ticket.getStage()) && !"Cancelled".equals(ticket.getStage())
                 && (specialistName == null || "Unassigned".equalsIgnoreCase(specialistName));
     }
 
@@ -124,5 +128,10 @@ public class TicketTriageQueue {
             case "HVAC" -> "HVAC Specialist";
             default -> "General Repair specialist";
         };
+    }
+
+    private static String queueContext(int waitingAhead) {
+        return waitingAhead == 0 ? " based on the current queue." : " based on " + waitingAhead
+                + " active equal or higher-severity ticket" + (waitingAhead == 1 ? "" : "s") + " in this trade.";
     }
 }

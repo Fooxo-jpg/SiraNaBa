@@ -12,6 +12,7 @@ export const endpoints = {
   updateTicket: (id, payload) => api.patch(`/api/tickets/${id}`, payload),
   getAdminTickets: () => api.get('/api/admin/tickets'),
   assignAdminTicket: (ticketId, staffId) => api.post(`/api/admin/tickets/${ticketId}/assign`, { staffId }),
+  markAdminTicketArrived: (ticketId) => api.post(`/api/admin/tickets/${ticketId}/dispatch-status`, { status: 'Arrived' }),
   updateAdminDispatchStatus: (ticketId, status) => api.post(`/api/admin/tickets/${ticketId}/dispatch-status`, { status }),
 
   getBilling: () => api.get('/api/billing'),

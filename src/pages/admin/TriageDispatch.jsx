@@ -29,7 +29,7 @@ function formatTowerRoom(location) {
 }
 
 export default function TriageDispatch() {
-  const { stats, dispatchedCount, technicians, coordinationHub, coordinator, hazardGuidelines } =
+  const { stats, dispatchedCount, technicians, coordinator, hazardGuidelines } =
     triageDispatch;
   const [tickets, setTickets] = useState([]);
   const [ticketsError, setTicketsError] = useState('');
@@ -46,8 +46,9 @@ export default function TriageDispatch() {
   // worker completes, without clients calling Gemini themselves.
   useAutoRefresh(loadTickets);
   const isAssigned = (ticket) => ticket.specialist?.name && ticket.specialist.name !== 'Unassigned';
-  const pendingTickets = tickets.filter((ticket) => !isAssigned(ticket) && ticket.stage !== 'Resolved');
-  const dispatchedTickets = tickets.filter((ticket) => isAssigned(ticket) && !['Fixed Problem', 'Cancelled'].includes(ticket.dispatchStatus));
+  const pendingTickets = tickets.filter((ticket) => !isAssigned(ticket) && !['Resolved', 'Cancelled'].includes(ticket.stage));
+  const coordinationTickets = tickets.filter((ticket) => isAssigned(ticket) && ticket.dispatchStatus === 'Coordinating');
+  const dispatchedTickets = tickets.filter((ticket) => ticket.dispatchStatus === 'Dispatched' || ticket.dispatchStatus === 'Escalated');
   const completedTickets = tickets.filter((ticket) => isAssigned(ticket) && ['Fixed Problem', 'Cancelled'].includes(ticket.dispatchStatus));
   const TABS = [
     { id: 'pending', label: 'Pending Review', count: pendingTickets.length },
@@ -112,6 +113,20 @@ export default function TriageDispatch() {
     } catch (error) {
       setTicketsError(error.message || "Couldn't update the dispatch status.");
     }
+  };
+
+  const markArrived = async (ticket) => {
+    try {
+      const updated = await endpoints.markAdminTicketArrived(ticket.id);
+      setTickets((current) => current.map((item) => (item.id === ticket.id ? updated : item)));
+    } catch (error) {
+      setTicketsError(error.message || "Couldn't mark maintenance staff as arrived.");
+    }
+  };
+
+  const towerRoom = (ticket) => {
+    if (ticket.tower && ticket.unit) return `Tower ${ticket.tower} · Unit ${ticket.unit}`;
+    return formatTowerRoom(ticket.location);
   };
 
   return (
@@ -220,7 +235,7 @@ export default function TriageDispatch() {
                           <p className="text-xs text-ink-700/50">{t.location}</p>
                         </td>
                         <td className="py-3 pr-3 align-top font-mono text-xs font-semibold text-ink-700/70">
-                          {formatTowerRoom(t.location)}
+                          {towerRoom(t)}
                         </td>
                         <td className="py-3 pr-3 align-top">
                           <StatusBadge label={t.priority || 'Loading...'} />
@@ -268,7 +283,7 @@ export default function TriageDispatch() {
               </div>
               <div className="mt-4 flex items-center justify-between text-xs text-ink-700/50">
                 <span>
-                  Showing {visibleTickets.length} of {pendingTickets.length} work orders
+                  Showing {visibleTickets.length} of {tab === 'pending' ? pendingTickets.length : tab === 'dispatched' ? dispatchedTickets.length : completedTickets.length} work orders
                 </span>
                 <div className="flex gap-2">
                   <button className="rounded-md border border-black/10 px-3 py-1.5 font-medium hover:bg-sand-100 disabled:opacity-40" disabled>
@@ -298,28 +313,29 @@ export default function TriageDispatch() {
                 Live Feed
               </span>
             </div>
-            {coordinationHub.length === 0 && (
-              <p className="py-8 text-center text-sm text-ink-700/50">No field updates yet.</p>
+            {coordinationTickets.length === 0 && (
+              <p className="py-8 text-center text-sm text-ink-700/50">No staff are coordinating arrival yet.</p>
             )}
             <ul className="divide-y divide-black/5">
-              {coordinationHub.map((ev) => (
-                <li key={ev.id} className="flex items-start justify-between gap-3 py-3">
+              {coordinationTickets.map((ticket) => (
+                <li key={ticket.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div className="flex items-start gap-3">
                     <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-sand-100 text-[10px] font-semibold text-ink-700/60">
-                      {ev.name
+                      {ticket.specialist.name
                         .split(' ')
                         .map((n) => n[0])
                         .join('')}
                     </div>
                     <p className="text-sm text-ink-900">
-                      <span className="font-semibold">{ev.name}</span> {ev.action}{' '}
-                      <span className="font-semibold underline">{ev.link}</span>
+                      <span className="font-semibold">{ticket.specialist.name}</span> is coordinating arrival for{' '}
+                      <span className="font-semibold">{ticket.id}</span> — {ticket.title}
+                      <span className="block text-xs text-ink-700/50">{towerRoom(ticket)} · {ticket.specialist.title}</span>
                     </p>
                   </div>
-                  <div className="flex flex-shrink-0 items-center gap-2 text-xs text-ink-700/40">
-                    {ev.time}
-                    <button aria-label="More options" className="hover:text-ink-900">
-                      <Icon name="dots" size={14} />
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <StatusBadge label="Coordinating" />
+                    <button onClick={() => markArrived(ticket)} className="rounded-md bg-forest-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-forest-600">
+                      <Icon name="check" size={13} /> Arrived
                     </button>
                   </div>
                 </li>

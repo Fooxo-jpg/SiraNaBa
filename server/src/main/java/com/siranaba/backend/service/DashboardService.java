@@ -26,7 +26,7 @@ public class DashboardService {
 
     public DashboardSummaryResponse getSummary() {
         Tenant tenant = tenantContext.currentTenant();
-        long activeTicketCount = ticketRepository.countByTenantIdAndStageNot(tenant.getId(), "Resolved");
+        long activeTicketCount = ticketRepository.countByTenantIdAndStageNotIn(tenant.getId(), java.util.List.of("Resolved", "Cancelled"));
 
         return new DashboardSummaryResponse(
                 tenant,

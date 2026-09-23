@@ -41,7 +41,8 @@ public class TicketService {
     }
 
     public Ticket get(String id) {
-        String tenantId = tenantContext.currentTenantId();
+        Tenant tenant = tenantContext.currentTenant();
+        String tenantId = tenant.getId();
         return ticketRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found."));
     }
@@ -52,7 +53,8 @@ public class TicketService {
     }
 
     public Ticket create(CreateTicketRequest request) {
-        String tenantId = tenantContext.currentTenantId();
+        Tenant tenant = tenantContext.currentTenant();
+        String tenantId = tenant.getId();
         Instant now = Instant.now();
 
         Ticket ticket = new Ticket();
@@ -62,6 +64,8 @@ public class TicketService {
         ticket.setTitle(request.title());
         ticket.setDescription(request.description());
         ticket.setLocation(request.location());
+        ticket.setTower(tenant.getTower());
+        ticket.setUnit(tenant.getUnit());
         ticket.setStage("Submitted");
         ticket.setSubmittedAt(now);
         ticket.setUpdatedAt(now);
@@ -82,7 +86,7 @@ public class TicketService {
 
     public Ticket update(String id, UpdateTicketRequest request) {
         Ticket ticket = get(id);
-        boolean newlyResolved = "Resolved".equals(request.stage()) && !"Resolved".equals(ticket.getStage());
+        boolean newlyCancelled = "Cancelled".equals(request.stage()) && !"Cancelled".equals(ticket.getStage());
 
         if (request.category() != null) ticket.setCategory(request.category());
         if (request.title() != null) ticket.setTitle(request.title());
@@ -95,12 +99,18 @@ public class TicketService {
         if (request.specialist() != null) ticket.setSpecialist(request.specialist());
         if (request.attachments() != null) ticket.setAttachments(request.attachments());
 
-        // A resolution can be initiated outside the admin dispatch buttons
-        // (for example, from the tenant ticket view). Always release the
+        // Cancellation can be initiated from the tenant ticket view. Always release the
         // assigned technician's active-ticket count and workload in that case.
-        if (newlyResolved && ticket.getSpecialist() != null
+        if (newlyCancelled && ticket.getSpecialist() != null
                 && !"Unassigned".equalsIgnoreCase(ticket.getSpecialist().getName())) {
             ticketDispatchService.release(ticket);
+        }
+        if (newlyCancelled) {
+            ticket.setDispatchStatus("Cancelled");
+            var timeline = new java.util.ArrayList<>(ticket.getTimeline());
+            timeline.add(new TimelineEvent("tl_" + UUID.randomUUID(), "Request cancelled",
+                    "The tenant cancelled this maintenance request.", Instant.now()));
+            ticket.setTimeline(timeline);
         }
 
         ticket.setUpdatedAt(Instant.now());

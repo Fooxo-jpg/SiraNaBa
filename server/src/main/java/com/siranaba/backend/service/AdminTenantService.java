@@ -9,6 +9,7 @@ import com.siranaba.backend.model.Billing;
 import com.siranaba.backend.model.Cta;
 import com.siranaba.backend.model.NotificationDoc;
 import com.siranaba.backend.model.Tenant;
+import com.siranaba.backend.model.UtilityUsage;
 import com.siranaba.backend.repository.BillingRepository;
 import com.siranaba.backend.repository.NotificationRepository;
 import com.siranaba.backend.repository.TenantRepository;
@@ -16,6 +17,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -31,6 +34,9 @@ import java.util.Locale;
 public class AdminTenantService {
 
     private static final double PARKING_FEE = 1000.0;
+    /** Meralco's published residential reference rate for September 2026, in PHP/kWh. */
+    private static final double MERALCO_RESIDENTIAL_RATE = 14.7424;
+    private static final DateTimeFormatter BILLING_PERIOD_LABEL = DateTimeFormatter.ofPattern("MMMM uuuu", Locale.ENGLISH);
 
     private final TenantRepository tenantRepository;
     private final BillingRepository billingRepository;
@@ -106,44 +112,104 @@ public class AdminTenantService {
     }
 
     /**
-     * Publishes a standalone utility statement. Utility charges are calculated
-     * from the readings and rates supplied by management; monthly rent is billed
-     * separately and is intentionally not included here. This replaces the
-     * current statement breakdown rather than creating a payment transaction.
+     * Publishes the current month's utility statement. Re-entering readings in
+     * the same calendar month updates that statement rather than creating
+     * another one. Utility charges are calculated from the readings and rates
+     * supplied by management; monthly rent is billed separately.
      */
     public PresentBillResponse presentBill(String tenantId, PresentBillRequest request) {
         Tenant tenant = find(tenantId);
         double waterCharge = request.waterUsage() * request.waterRate();
-        double electricityCharge = request.electricityUsage() * request.electricityRate();
+        // Electricity is always billed at the configured Meralco residential rate;
+        // the client-provided rate is deliberately not trusted for billing.
+        double electricityCharge = request.electricityUsage() * MERALCO_RESIDENTIAL_RATE;
         double parkingCharge = request.parkingFee() ? PARKING_FEE : 0;
         double total = waterCharge + electricityCharge + parkingCharge;
 
         Billing billing = billingRepository.findByTenantId(tenantId).orElseGet(() -> Billing.empty(tenantId));
+        YearMonth period = YearMonth.now();
+        String periodValue = period.toString();
+        boolean updatingExistingStatement = periodValue.equals(billing.getUtilityStatementPeriod());
+        if (updatingExistingStatement && statementMatches(billing, request)) {
+            return new PresentBillResponse(tenantId, waterCharge, electricityCharge, parkingCharge, total,
+                    tenant.getRentDueDate(), periodValue, false, true);
+        }
         billing.setBreakdown(List.of(
                 new Billing.BreakdownLine("Water (" + request.waterUsage() + " m³ × PHP " + request.waterRate() + ")", waterCharge),
-                new Billing.BreakdownLine("Electricity (" + request.electricityUsage() + " kWh × PHP " + request.electricityRate() + ")", electricityCharge),
+                new Billing.BreakdownLine("Electricity (" + request.electricityUsage() + " kWh × PHP " + MERALCO_RESIDENTIAL_RATE + ")", electricityCharge),
                 new Billing.BreakdownLine("Parking fee", parkingCharge)
         ).stream().filter(line -> line.getAmount() > 0).toList());
         billing.setUtilityBreakdowns(List.of(
                 new Billing.UtilityBreakdown("water", "Water", request.waterUsage(), "m³", "PHP " + request.waterRate() + " / m³", "neutral", 0),
-                new Billing.UtilityBreakdown("electricity", "Electricity", request.electricityUsage(), "kWh", "PHP " + request.electricityRate() + " / kWh", "neutral", 0)
+                new Billing.UtilityBreakdown("electricity", "Electricity", request.electricityUsage(), "kWh", "PHP " + MERALCO_RESIDENTIAL_RATE + " / kWh", "neutral", 0)
         ));
+        billing.setUtilityStatementPeriod(periodValue);
         billingRepository.save(billing);
 
         tenant.setCurrentBalance(total);
+        tenant.setUtilityUsage(updatedUtilityUsage(tenant.getUtilityUsage(), period,
+                request.waterUsage(), request.electricityUsage()));
         tenantRepository.save(tenant);
 
         NotificationDoc note = new NotificationDoc();
         note.setTenantId(tenantId);
         note.setCategory("Payments");
-        note.setTitle("New bill available");
+        note.setTitle(updatingExistingStatement ? "Bill updated" : "New bill available");
         note.setBody(String.format(Locale.ENGLISH,
-                "Your new monthly bill of PHP %,.2f is available. Please review the rent and utility breakdown.", total));
+                updatingExistingStatement
+                        ? "Your %s utility statement was updated to PHP %,.2f."
+                        : "Your new %s utility statement of PHP %,.2f is available. Please review the rent and utility breakdown.",
+                period.format(BILLING_PERIOD_LABEL), total));
         note.setTimestamp(Instant.now());
         note.setCta(new Cta("View Billing", "/billing"));
         notificationRepository.save(note);
 
-        return new PresentBillResponse(tenantId, waterCharge, electricityCharge, parkingCharge, total, tenant.getRentDueDate());
+        return new PresentBillResponse(tenantId, waterCharge, electricityCharge, parkingCharge, total,
+                tenant.getRentDueDate(), periodValue, updatingExistingStatement, false);
+    }
+
+    /** True when re-submitted values would produce the exact current-period statement already on file. */
+    private static boolean statementMatches(Billing billing, PresentBillRequest request) {
+        Billing.UtilityBreakdown water = utility(billing, "water");
+        Billing.UtilityBreakdown electricity = utility(billing, "electricity");
+        if (water == null || electricity == null
+                || !sameNumber(water.getValue(), request.waterUsage())
+                || !sameNumber(electricity.getValue(), request.electricityUsage())
+                || !rateMatches(water.getDeltaLabel(), request.waterRate())
+                || !rateMatches(electricity.getDeltaLabel(), MERALCO_RESIDENTIAL_RATE)) {
+            return false;
+        }
+        boolean savedParking = billing.getBreakdown().stream()
+                .anyMatch(line -> "Parking fee".equals(line.getLabel()) && sameNumber(line.getAmount(), PARKING_FEE));
+        return savedParking == request.parkingFee();
+    }
+
+    private static Billing.UtilityBreakdown utility(Billing billing, String id) {
+        return billing.getUtilityBreakdowns().stream().filter(item -> id.equals(item.getId())).findFirst().orElse(null);
+    }
+
+    private static boolean rateMatches(String label, double rate) {
+        return label != null && label.equals("PHP " + rate + " / " + (label.endsWith("m³") ? "m³" : "kWh"));
+    }
+
+    private static boolean sameNumber(Double left, double right) {
+        return left != null && Math.abs(left - right) < 0.000001;
+    }
+
+    private static UtilityUsage updatedUtilityUsage(UtilityUsage current, YearMonth period,
+                                                      double waterUsage, double electricityUsage) {
+        UtilityUsage.UsageMetric priorWater = current == null ? null : current.getWater();
+        UtilityUsage.UsageMetric priorElectricity = current == null ? null : current.getElectricity();
+        return new UtilityUsage(
+                period.format(BILLING_PERIOD_LABEL),
+                new UtilityUsage.UsageMetric(electricityUsage, usageLimit(priorElectricity, electricityUsage), "kWh",
+                        priorElectricity == null ? null : priorElectricity.getDeltaVsNeighbors()),
+                new UtilityUsage.UsageMetric(waterUsage, usageLimit(priorWater, waterUsage), "m³", null)
+        );
+    }
+
+    private static double usageLimit(UtilityUsage.UsageMetric previous, double usage) {
+        return previous != null && previous.getLimit() > 0 ? previous.getLimit() : Math.max(usage, 1);
     }
 
     private Tenant find(String tenantId) {

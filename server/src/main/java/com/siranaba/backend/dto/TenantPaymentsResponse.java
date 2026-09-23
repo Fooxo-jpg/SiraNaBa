@@ -11,6 +11,9 @@ public record TenantPaymentsResponse(
         String tenantName,
         double totalPaid,
         List<Billing.Transaction> transactions,
-        List<Billing.PaymentMethod> paymentMethods
+        List<Billing.PaymentMethod> paymentMethods,
+        String utilityStatementPeriod,
+        List<Billing.UtilityBreakdown> utilityBreakdowns,
+        List<Billing.BreakdownLine> breakdown
 ) {
 }

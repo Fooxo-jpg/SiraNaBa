@@ -581,6 +581,7 @@ export function PayModal({ open, onClose, amount, methods, onPaid }) {
 export function ReceiptModal({ receipt, onClose }) {
   const [copied, setCopied] = useState(false);
   if (!receipt) return null;
+  const failed = receipt.status === 'Failed';
   const paid = new Date(receipt.paidAt);
   const date = paid.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Manila' });
   const time = paid.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila' });
@@ -606,19 +607,20 @@ export function ReceiptModal({ receipt, onClose }) {
       </button>
     }>
       <div className="mb-5 flex flex-col items-center text-center">
-        <span className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-status-successBg text-status-success">
-          <Icon name="check" size={24} strokeWidth={2.4} />
+        <span className={`mb-2 flex h-12 w-12 items-center justify-center rounded-full ${failed ? 'bg-status-highBg text-status-high' : 'bg-status-successBg text-status-success'}`}>
+          <Icon name={failed ? 'alert' : 'check'} size={24} strokeWidth={2.4} />
         </span>
-        <p className="text-base font-semibold text-ink-900">Payment Successful</p>
+        <p className="text-base font-semibold text-ink-900">{failed ? 'Payment Failed' : 'Payment Successful'}</p>
         <p className="text-2xl font-bold text-ink-900">{formatPhp(receipt.amount)}</p>
+        {failed && <p className="mt-1 text-xs text-ink-700/60">No funds were collected. This attempt is recorded in the transaction log.</p>}
       </div>
 
-      <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-dashed border-forest-400 bg-forest-50 px-4 py-3">
+      <div className={`mb-3 flex items-center justify-between gap-3 rounded-lg border border-dashed px-4 py-3 ${failed ? 'border-status-high/40 bg-status-highBg' : 'border-forest-400 bg-forest-50'}`}>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-forest-700/70">Reference Code</p>
-          <p className="font-mono text-base font-bold tracking-wide text-forest-800">{receipt.referenceCode}</p>
+          <p className={`text-[11px] font-semibold uppercase tracking-wide ${failed ? 'text-status-high/70' : 'text-forest-700/70'}`}>Reference Code</p>
+          <p className={`font-mono text-base font-bold tracking-wide ${failed ? 'text-status-high' : 'text-forest-800'}`}>{receipt.referenceCode}</p>
         </div>
-        <button onClick={copy} className="rounded-md border border-forest-400/50 bg-white px-2.5 py-1 text-xs font-semibold text-forest-700 hover:bg-forest-50">
+        <button onClick={copy} className={`rounded-md border bg-white px-2.5 py-1 text-xs font-semibold ${failed ? 'border-status-high/40 text-status-high hover:bg-status-highBg' : 'border-forest-400/50 text-forest-700 hover:bg-forest-50'}`}>
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>

@@ -42,25 +42,38 @@ public class AdminTicketDispatchService {
         ticket.setSpecialist(ticketDispatchService.specialistFor(staff, ticket.getEstimatedCompletion()));
         ticket.setAssignedStaffId(staff.getId());
         ticket.setStage("Assigned");
-        ticket.setDispatchStatus("Assigned");
+        ticket.setDispatchStatus("Coordinating");
         ticket.setUpdatedAt(now);
         var timeline = new ArrayList<>(ticket.getTimeline());
         timeline.add(new TimelineEvent(
                 "tl_" + UUID.randomUUID(),
                 "Maintenance staff assigned",
-                staff.getName() + " (" + staff.getSpecialty() + ") was assigned by an administrator.",
+                staff.getName() + " (" + staff.getSpecialty() + ") was assigned and is coordinating arrival.",
                 now));
         ticket.setTimeline(timeline);
         return ticketRepository.save(ticket);
     }
 
     public Ticket updateDispatchStatus(String ticketId, String status) {
-        if (!java.util.Set.of("Fixed Problem", "Escalated", "Cancelled").contains(status)) {
+        if (!java.util.Set.of("Arrived", "Fixed Problem", "Escalated", "Cancelled").contains(status)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Unsupported dispatch status.");
         }
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found."));
         Instant now = Instant.now();
+        if ("Arrived".equals(status)) {
+            if (!"Coordinating".equals(ticket.getDispatchStatus())) {
+                throw new ApiException(HttpStatus.CONFLICT, "Only a coordinating ticket can be marked as arrived.");
+            }
+            ticket.setStage("In Progress");
+            ticket.setDispatchStatus("Dispatched");
+            ticket.setUpdatedAt(now);
+            var timeline = new ArrayList<>(ticket.getTimeline());
+            timeline.add(new TimelineEvent("tl_" + UUID.randomUUID(), "Maintenance staff arrived",
+                    "Your assigned maintenance staff has arrived and work is now in progress.", now));
+            ticket.setTimeline(timeline);
+            return ticketRepository.save(ticket);
+        }
         boolean newlyFixed = "Fixed Problem".equals(status) && !"Fixed Problem".equals(ticket.getDispatchStatus());
         if (newlyFixed && !"Resolved".equals(ticket.getStage())) {
             ticketDispatchService.release(ticket);

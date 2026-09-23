@@ -14,7 +14,7 @@ export default function Maintenance() {
   const [serviceHealth, setServiceHealth] = useState(null);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('loading');
-  const [showArchived, setShowArchived] = useState(false);
+  const [historyView, setHistoryView] = useState(false);
 
   const load = useCallback(() => {
     setStatus('loading');
@@ -33,14 +33,15 @@ export default function Maintenance() {
   // shared ticket state so Loading... changes to the final severity in-place.
   useAutoRefresh(load);
 
-  const activeTickets = useMemo(() => tickets.filter((ticket) => ticket.stage !== 'Resolved'), [tickets]);
+  const activeTickets = useMemo(() => tickets.filter((ticket) => !['Resolved', 'Cancelled'].includes(ticket.stage)), [tickets]);
   const archivedTickets = useMemo(() => tickets.filter((ticket) => ticket.stage === 'Resolved'), [tickets]);
+  const cancelledTickets = useMemo(() => tickets.filter((ticket) => ticket.stage === 'Cancelled'), [tickets]);
   const displayedTickets = useMemo(
     () =>
-      (showArchived ? archivedTickets : activeTickets).filter(
+      (historyView ? [...archivedTickets, ...cancelledTickets] : activeTickets).filter(
         (t) => !query || t.title.toLowerCase().includes(query.toLowerCase()) || t.id.toLowerCase().includes(query.toLowerCase())
       ),
-    [activeTickets, archivedTickets, query, showArchived]
+    [activeTickets, archivedTickets, cancelledTickets, query, historyView]
   );
 
   return (
@@ -58,8 +59,8 @@ export default function Maintenance() {
               </p>
             </div>
             <div className="flex gap-3">
-              <button className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100">
-                Request History
+              <button onClick={() => setHistoryView((value) => !value)} className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100">
+                {historyView ? 'Active Requests' : 'Ticket History'}
               </button>
               <Link
                 to="/maintenance/new"
@@ -75,9 +76,9 @@ export default function Maintenance() {
             <div className="lg:col-span-2">
               <Card className="p-5">
                 <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-semibold text-ink-900">{showArchived ? 'Archived Tickets' : 'Active Requests'}</h2>
+                  <h2 className="font-semibold text-ink-900">{historyView ? 'Ticket History' : 'Active Requests'}</h2>
                   <span className="rounded-full bg-sand-100 px-2 py-0.5 text-xs font-semibold text-ink-700/60">
-                    {(showArchived ? archivedTickets : activeTickets).length}
+                    {(historyView ? archivedTickets.length + cancelledTickets.length : activeTickets.length)}
                   </span>
                 </div>
                 <label className="relative mb-3 block">
@@ -124,11 +125,8 @@ export default function Maintenance() {
                 </ul>
 
                 {displayedTickets.length === 0 && (
-                  <p className="py-6 text-center text-sm text-ink-700/50">No {showArchived ? 'archived' : 'active'} tickets.</p>
+                  <p className="py-6 text-center text-sm text-ink-700/50">No {historyView ? 'ticket history' : 'active tickets'}.</p>
                 )}
-                <button onClick={() => setShowArchived((value) => !value)} className="mt-4 block w-full text-center text-sm font-medium text-forest-600 hover:underline">
-                  {showArchived ? '‹ Back to Active Requests' : `View Archived Tickets (${archivedTickets.length}) ›`}
-                </button>
               </Card>
             </div>
 

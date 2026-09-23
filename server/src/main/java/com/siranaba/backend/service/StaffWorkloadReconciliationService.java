@@ -65,7 +65,7 @@ public class StaffWorkloadReconciliationService {
                 || (ticket.getSpecialist() != null && ticket.getSpecialist().getName() != null
                     && !"Unassigned".equalsIgnoreCase(ticket.getSpecialist().getName()));
         return hasAssignedStaff
-                && !"Resolved".equals(ticket.getStage())
+                && !"Resolved".equals(ticket.getStage()) && !"Cancelled".equals(ticket.getStage())
                 && !"Fixed Problem".equals(ticket.getDispatchStatus())
                 && !"Cancelled".equals(ticket.getDispatchStatus());
     }

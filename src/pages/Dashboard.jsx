@@ -7,7 +7,16 @@ import StatusBadge from '../components/StatusBadge.jsx';
 import { ProgressBar, LoadingState, ErrorState } from '../components/Common.jsx';
 import { useSession } from '../context/SessionContext.jsx';
 import { endpoints } from '../api/endpoints.js';
-import { formatRelativeTime, formatDate } from '../utils/format.js';
+import { formatRelativeTime, formatDate, formatPhp } from '../utils/format.js';
+
+function daysUntil(dateString) {
+  if (!dateString) return null;
+  const due = new Date(`${dateString.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(due.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((due - today) / 86_400_000);
+}
 
 export default function Dashboard() {
   const { tenant } = useSession();
@@ -39,6 +48,15 @@ export default function Dashboard() {
     endpoints.getDashboardSummary().then(setSummary).catch(() => {});
   }, [tenant]);
 
+  const dashboardTenant = summary?.tenant || tenant;
+  const utilityUsage = summary?.utilityUsage;
+  const electricity = utilityUsage?.electricity;
+  const water = utilityUsage?.water;
+  const rentDays = daysUntil(dashboardTenant?.rentDueDate);
+  const balanceVisible = dashboardTenant?.currentBalance <= 0 || (rentDays !== null && rentDays <= 7);
+  const maintenance = summary?.nextScheduledMaintenance;
+  const neighborDelta = electricity?.deltaVsNeighbors;
+
   return (
     <Layout>
       {status === 'loading' && <LoadingState label="Loading your dashboard…" />}
@@ -53,10 +71,10 @@ export default function Dashboard() {
                 TENANT PORTAL
               </span>
               <h1 className="mt-4 text-3xl font-bold leading-tight">
-                Welcome back, {tenant ? tenant.lastName : '…'}
+                Welcome back, {dashboardTenant ? dashboardTenant.lastName : '…'}
               </h1>
               <p className="mt-3 text-sm leading-relaxed text-white/70">
-                Everything you need for your home at {tenant?.building || 'your building'} is at
+                Everything you need for your home at {dashboardTenant?.building || 'your building'} is at
                 your fingertips. View your current balance, track maintenance requests, or explore
                 community updates.
               </p>
@@ -86,8 +104,14 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-wide text-ink-700/50">
                 Current Balance
               </p>
-              <p className="mt-1 text-2xl font-bold text-ink-900">$0.0</p>
-              <p className="mt-1 text-xs text-ink-700/50">Due on —</p>
+              <p className="mt-1 text-2xl font-bold text-ink-900">
+                {balanceVisible ? formatPhp(dashboardTenant?.currentBalance) : '—'}
+              </p>
+              <p className="mt-1 text-xs text-ink-700/50">
+                {dashboardTenant?.currentBalance <= 0
+                  ? 'No balance due'
+                  : `Due on ${formatDate(dashboardTenant.rentDueDate)}`}
+              </p>
             </Card>
 
             <Card className="p-5">
@@ -97,8 +121,10 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-wide text-ink-700/50">
                 Active Tickets
               </p>
-              <p className="mt-1 text-2xl font-bold text-ink-900">0.0</p>
-              <p className="mt-1 text-xs text-ink-700/50">—</p>
+              <p className="mt-1 text-2xl font-bold text-ink-900">{summary.activeTicketCount}</p>
+              <p className="mt-1 text-xs text-ink-700/50">
+                {summary.activeTicketCount === 1 ? '1 open request' : `${summary.activeTicketCount} open requests`}
+              </p>
             </Card>
 
             <Card className="p-5">
@@ -108,8 +134,8 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-wide text-ink-700/50">
                 Next Scheduled Maintenance
               </p>
-              <p className="mt-1 text-2xl font-bold text-ink-900">—</p>
-              <p className="mt-1 text-xs text-ink-700/50">—</p>
+              <p className="mt-1 text-lg font-bold text-ink-900">{maintenance?.label || 'None scheduled'}</p>
+              <p className="mt-1 text-xs text-ink-700/50">{maintenance?.date ? formatDate(maintenance.date) : 'No upcoming visit'}</p>
             </Card>
 
             <Card className="p-5">
@@ -119,8 +145,12 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-wide text-ink-700/50">
                 Days Until Rent Due
               </p>
-              <p className="mt-1 text-2xl font-bold text-ink-900">0.0 Days</p>
-              <p className="mt-1 text-xs text-ink-700/50">—</p>
+              <p className="mt-1 text-2xl font-bold text-ink-900">
+                {rentDays === null ? '—' : rentDays < 0 ? `${Math.abs(rentDays)} Days` : `${rentDays} Days`}
+              </p>
+              <p className="mt-1 text-xs text-ink-700/50">
+                {rentDays === null ? 'Due date unavailable' : rentDays < 0 ? 'Past due' : `Due ${formatDate(dashboardTenant.rentDueDate)}`}
+              </p>
             </Card>
           </div>
 
@@ -130,7 +160,7 @@ export default function Dashboard() {
               <div>
                 <h2 className="mb-3 text-lg font-semibold text-ink-900">Management Tools</h2>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  {summary.managementTools.map((tool) => (
+                  {(summary.managementTools || []).map((tool) => (
                     <Link key={tool.id} to={tool.route}>
                       <Card className="h-full p-5 transition-shadow hover:shadow-md">
                         <div className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-forest-50 text-forest-600">
@@ -151,7 +181,7 @@ export default function Dashboard() {
                   <div>
                     <h2 className="text-lg font-semibold text-ink-900">Utility Consumption</h2>
                     <p className="text-xs text-ink-700/50">
-                      Estimated usage for the current billing cycle
+                      {utilityUsage?.cycleLabel || 'Usage for the current billing cycle'}
                     </p>
                   </div>
                   <Link to="/billing" className="text-sm font-medium text-forest-600 hover:underline">
@@ -165,9 +195,11 @@ export default function Dashboard() {
                       <span className="flex items-center gap-1.5 font-medium text-ink-900">
                         <Icon name="bolt" size={15} className="text-amber-500" /> Electricity
                       </span>
-                      <span className="text-ink-700/60">0.0 kWh / 0.0 kWh</span>
+                      <span className="text-ink-700/60">
+                        {electricity ? `${electricity.used.toLocaleString()} ${electricity.unit} / ${electricity.limit.toLocaleString()} ${electricity.unit}` : 'No reading available'}
+                      </span>
                     </div>
-                    <ProgressBar value={0} max={1} color="bg-amber-500" />
+                    <ProgressBar value={electricity?.used || 0} max={electricity?.limit || 1} color="bg-amber-500" />
                   </div>
 
                   <div>
@@ -175,18 +207,24 @@ export default function Dashboard() {
                       <span className="flex items-center gap-1.5 font-medium text-ink-900">
                         <Icon name="droplet" size={15} className="text-sky-500" /> Water
                       </span>
-                      <span className="text-ink-700/60">0.0 Gal / 0.0 Gal</span>
+                      <span className="text-ink-700/60">
+                        {water ? `${water.used.toLocaleString()} ${water.unit} / ${water.limit.toLocaleString()} ${water.unit}` : 'No reading available'}
+                      </span>
                     </div>
-                    <ProgressBar value={0} max={1} color="bg-sky-500" />
+                    <ProgressBar value={water?.used || 0} max={water?.limit || 1} color="bg-sky-500" />
                   </div>
 
                   <div className="flex items-start gap-3 rounded-lg bg-forest-50 p-4">
                     <Icon name="trend" size={17} className="mt-0.5 flex-shrink-0 text-forest-600" />
                     <div className="flex-1">
                       <p className="text-sm font-semibold text-ink-900">Efficiency Insight</p>
-                      <p className="text-xs text-ink-700/60">0.0% vs neighbors in {tenant?.building || 'your building'}.</p>
+                      <p className="text-xs text-ink-700/60">
+                        {neighborDelta === null || neighborDelta === undefined
+                          ? `Comparison data is not available for ${dashboardTenant?.building || 'your building'}.`
+                          : `${Math.abs(neighborDelta)}% ${neighborDelta < 0 ? 'below' : neighborDelta > 0 ? 'above' : 'in line with'} neighbors in ${dashboardTenant?.building || 'your building'}.`}
+                      </p>
                     </div>
-                    <StatusBadge label="—" tone="neutral" />
+                    <StatusBadge label={neighborDelta === null || neighborDelta === undefined ? 'Unavailable' : neighborDelta <= 0 ? 'Efficient' : 'Above average'} tone={neighborDelta === null || neighborDelta === undefined ? 'neutral' : neighborDelta <= 0 ? 'success' : 'progress'} />
                   </div>
                 </div>
               </Card>
@@ -198,7 +236,7 @@ export default function Dashboard() {
                 <h2 className="text-lg font-semibold text-ink-900">Recent Activity</h2>
                 <p className="mb-4 text-xs text-ink-700/50">Track updates across your portal</p>
                 <ul className="space-y-4">
-                  {summary.recentActivity.map((item) => (
+                  {(summary.recentActivity || []).map((item) => (
                     <li key={item.id} className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-medium text-ink-900">{item.title}</p>

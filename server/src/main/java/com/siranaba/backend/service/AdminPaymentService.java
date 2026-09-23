@@ -56,7 +56,8 @@ public class AdminPaymentService {
         String name = ((tenant.getFirstName() == null ? "" : tenant.getFirstName()) + " "
                 + (tenant.getLastName() == null ? "" : tenant.getLastName())).trim();
         return new TenantPaymentsResponse(tenant.getId(), tenant.getTenantCode(), name, totalPaid,
-                billing.getTransactions(), billing.getPaymentMethods());
+                billing.getTransactions(), billing.getPaymentMethods(), billing.getUtilityStatementPeriod(),
+                billing.getUtilityBreakdowns(), billing.getBreakdown());
     }
 
     private static AdminPaymentResponse toResponse(Tenant t, Billing.Transaction tx) {
