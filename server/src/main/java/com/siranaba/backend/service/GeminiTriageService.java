@@ -94,7 +94,8 @@ public class GeminiTriageService {
                 - "Severe": significant disruption but not immediately dangerous (no hot water,
                   major appliance failure, persistent leak).
                 - "Medium": inconvenient but livable (minor leak, single appliance issue).
-                - "Low": cosmetic or non-urgent (squeaky door, light bulb, cosmetic scuff).
+                - "Low": cosmetic or non-urgent (squeaky door, light bulb, cosmetic scuff, a single
+                  clogged toilet that isn't overflowing).
 
                 Category: %s
                 Title: %s
@@ -213,11 +214,12 @@ public class GeminiTriageService {
                 "not cooling", "not heating", "no ac", "no a/c", "electrical", "outlet not working",
                 "appliance broken", "refrigerator not working", "fridge not working", "oven not working",
                 "stove not working", "washer not working", "dryer not working", "water heater", "pest", "mold",
-                "mould", "clogged", "backed up", "sewage")) {
+                "mould", "backed up", "sewage")) {
             return new TriageResult("Severe", "", "");
         }
         if (containsAny(text, "noisy", "slow drain", "loose", "squeak", "squeaky", "stuck", "cosmetic", "scuff",
-                "paint chip", "light bulb", "dim light", "flicker", "sticky door", "sticky window")) {
+                "paint chip", "light bulb", "dim light", "flicker", "sticky door", "sticky window", "clogged",
+                "not flushing", "won't flush", "wont flush")) {
             return new TriageResult("Low", "", "");
         }
         return new TriageResult("Medium", "", "");
