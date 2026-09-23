@@ -22,12 +22,14 @@ public class AdminTicketDispatchService {
     private final TicketRepository ticketRepository;
     private final TicketDispatchService ticketDispatchService;
     private final NotificationRepository notificationRepository;
+    private final AuditLogService auditLogService;
 
     public AdminTicketDispatchService(TicketRepository ticketRepository, TicketDispatchService ticketDispatchService,
-                                      NotificationRepository notificationRepository) {
+                                      NotificationRepository notificationRepository, AuditLogService auditLogService) {
         this.ticketRepository = ticketRepository;
         this.ticketDispatchService = ticketDispatchService;
         this.notificationRepository = notificationRepository;
+        this.auditLogService = auditLogService;
     }
 
     public Ticket assign(String ticketId, String staffId) {
@@ -51,7 +53,9 @@ public class AdminTicketDispatchService {
                 staff.getName() + " (" + staff.getSpecialty() + ") was assigned and is coordinating arrival.",
                 now));
         ticket.setTimeline(timeline);
-        return ticketRepository.save(ticket);
+        Ticket saved = ticketRepository.save(ticket);
+        auditLogService.update("TICKET", saved.getId() + " assigned to " + staff.getName() + " (" + staff.getSpecialty() + ")");
+        return saved;
     }
 
     public Ticket updateDispatchStatus(String ticketId, String status) {
@@ -72,7 +76,9 @@ public class AdminTicketDispatchService {
             timeline.add(new TimelineEvent("tl_" + UUID.randomUUID(), "Maintenance staff arrived",
                     "Your assigned maintenance staff has arrived and work is now in progress.", now));
             ticket.setTimeline(timeline);
-            return ticketRepository.save(ticket);
+            Ticket saved = ticketRepository.save(ticket);
+            auditLogService.update("TICKET", saved.getId() + " dispatch status: Dispatched (arrived on site)");
+            return saved;
         }
         boolean newlyFixed = "Fixed Problem".equals(status) && !"Fixed Problem".equals(ticket.getDispatchStatus());
         if (newlyFixed && !"Resolved".equals(ticket.getStage())) {
@@ -85,7 +91,9 @@ public class AdminTicketDispatchService {
         var timeline = new ArrayList<>(ticket.getTimeline());
         timeline.add(new TimelineEvent("tl_" + UUID.randomUUID(), status, "Dispatch status updated to " + status + ".", now));
         ticket.setTimeline(timeline);
-        return ticketRepository.save(ticket);
+        Ticket saved = ticketRepository.save(ticket);
+        auditLogService.update("TICKET", saved.getId() + " dispatch status: " + status);
+        return saved;
     }
 
     private void notifyTenantOfResolution(Ticket ticket, Instant now) {

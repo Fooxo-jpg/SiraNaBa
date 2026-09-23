@@ -21,17 +21,20 @@ public class TicketService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    private final AuditLogService auditLogService;
     private final TicketRepository ticketRepository;
     private final TenantContext tenantContext;
     private final TicketTriageQueue ticketTriageQueue;
     private final TicketDispatchService ticketDispatchService;
 
     public TicketService(TicketRepository ticketRepository, TenantContext tenantContext,
-                          TicketTriageQueue ticketTriageQueue, TicketDispatchService ticketDispatchService) {
+                         TicketTriageQueue ticketTriageQueue, TicketDispatchService ticketDispatchService,
+                         AuditLogService auditLogService) {
         this.ticketRepository = ticketRepository;
         this.tenantContext = tenantContext;
         this.ticketTriageQueue = ticketTriageQueue;
         this.ticketDispatchService = ticketDispatchService;
+        this.auditLogService = auditLogService;
     }
 
     public TicketListResponse list() {
@@ -81,7 +84,9 @@ public class TicketService {
         ticket.setSafetyNote("");
         ticket.setEstimatedCompletion(null);
 
-        return ticketRepository.save(ticket);
+        Ticket saved = ticketRepository.save(ticket);
+        auditLogService.insert("TICKET", saved.getId() + " submitted — " + saved.getCategory());
+        return saved;
     }
 
     public Ticket update(String id, UpdateTicketRequest request) {

@@ -114,7 +114,7 @@ function DatabasePanel({ db, error, refreshing, onRefresh }) {
 }
 
 export default function Configuration() {
-  const { systemStatus, logs, version, sessionRemaining } = configuration;
+  const { systemStatus, version, sessionRemaining } = configuration;
   const [tab, setTab] = useState('logs');
   const [query, setQuery] = useState('');
 
@@ -122,6 +122,24 @@ export default function Configuration() {
   const [db, setDb] = useState(null);
   const [dbError, setDbError] = useState('');
   const [refreshing, setRefreshing] = useState(true);
+
+  const [logs, setLogs] = useState([]);
+  const checkLogs = useCallback(async () => {
+    try {
+      const raw = await endpoints.getSystemLogs();
+      setLogs(raw.map((l) => ({
+        time: new Date(l.timestamp).toLocaleString(),
+        level: l.level,
+        tag: l.tag,
+        text: `${l.text}`,
+      })));
+    } catch {
+      // leave the previous logs showing rather than clearing them on a blip
+    }
+  }, []);
+
+  useEffect(() => { checkLogs(); }, [checkLogs]);
+  useAutoRefresh(checkLogs, { intervalMs: 10000 });
 
   const checkDb = useCallback(async () => {
     setRefreshing(true);

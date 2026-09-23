@@ -18,10 +18,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * Admin action behind "Authorize Registration": creates the tenant record, the
- * tenant's login (using the registered email) and emails the login details.
- */
 @Service
 public class TenantRegistrationService {
 
@@ -32,11 +28,12 @@ public class TenantRegistrationService {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final TenantCodeService tenantCodeService;
+    private final AuditLogService auditLogService;
 
     public TenantRegistrationService(TenantRepository tenantRepository, UserRepository userRepository,
                                      BillingRepository billingRepository, NotificationRepository notificationRepository,
                                      PasswordEncoder passwordEncoder, EmailService emailService,
-                                     TenantCodeService tenantCodeService) {
+                                     TenantCodeService tenantCodeService, AuditLogService auditLogService) {
         this.tenantRepository = tenantRepository;
         this.userRepository = userRepository;
         this.billingRepository = billingRepository;
@@ -44,6 +41,7 @@ public class TenantRegistrationService {
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
         this.tenantCodeService = tenantCodeService;
+        this.auditLogService = auditLogService;
     }
 
     public RegisterTenantResponse register(RegisterTenantRequest req) {
@@ -121,6 +119,9 @@ public class TenantRegistrationService {
         }
 
         EmailService.SendResult sent = emailService.sendWelcome(tenant, password);
+        auditLogService.insert("TENANT", tenant.getTenantCode() + " — new tenant "
+                + (tenant.getFirstName() + " " + tenant.getLastName()).trim()
+                + " (Tower " + tenant.getTower() + ", Unit " + tenant.getUnit() + ")");
         return new RegisterTenantResponse(tenant.getId(), email, rent, tenant.getRentDueDate(), sent.sent(), sent.message());
     }
 
@@ -155,10 +156,11 @@ public class TenantRegistrationService {
 
     /** Removes a tenant and their login so the unit can be assigned again. */
     public void remove(String tenantId) {
-        if (!tenantRepository.existsById(tenantId)) {
-            throw new ResourceNotFoundException("Tenant not found.");
-        }
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tenant not found."));
         removeTenantData(tenantId);
+        auditLogService.delete("TENANT", tenant.getTenantCode() + " — "
+                + (tenant.getFirstName() + " " + tenant.getLastName()).trim() + " has been removed");
     }
 
     private void removeTenantData(String tenantId) {
@@ -168,10 +170,6 @@ public class TenantRegistrationService {
         tenantRepository.deleteById(tenantId);
     }
 
-    /**
-     * Initial password = initials of the first and last name + tower + unit,
-     * e.g. Dwane Valencia, Tower 1, Unit 402 -> "DV1402".
-     */
     static String initialPassword(String fullName, int tower, String unit) {
         String[] parts = fullName.trim().split("\\s+");
         String initials = "" + Character.toUpperCase(parts[0].charAt(0))

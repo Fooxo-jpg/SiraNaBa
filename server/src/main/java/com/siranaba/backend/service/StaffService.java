@@ -22,13 +22,16 @@ import java.util.regex.Pattern;
 @Service
 public class StaffService {
 
-    private static final Pattern CODE = Pattern.compile("^ST-(\\d+)$");
-
+    // constructor: add AuditLogService as a dependency
     private final StaffRepository staffRepository;
+    private final AuditLogService auditLogService;
 
-    public StaffService(StaffRepository staffRepository) {
+    public StaffService(StaffRepository staffRepository, AuditLogService auditLogService) {
         this.staffRepository = staffRepository;
+        this.auditLogService = auditLogService;
     }
+
+    private static final Pattern CODE = Pattern.compile("^ST-(\\d+)$");
 
     public List<StaffResponse> list() {
         return staffRepository.findAll().stream()
@@ -48,7 +51,9 @@ public class StaffService {
         staff.setTickets(0);
         staff.setEmail(generateEmail(request.name()));
         staff.setPhone(request.phone() == null || request.phone().isBlank() ? "—" : request.phone().trim());
-        return toResponse(staffRepository.save(staff));
+        Staff saved = staffRepository.save(staff);
+        auditLogService.insert("STAFF", "New Staff (" + saved.getName() + ", " + saved.getStaffCode() + ")");
+        return toResponse(saved);
     }
 
     public StaffResponse update(String staffId, UpdateStaffRequest request) {
@@ -82,10 +87,10 @@ public class StaffService {
     }
 
     public void remove(String staffId) {
-        if (!staffRepository.existsById(staffId)) {
-            throw new ResourceNotFoundException("Staff member not found.");
-        }
+        Staff staff = staffRepository.findById(staffId)
+                .orElseThrow(() -> new ResourceNotFoundException("Staff member not found."));
         staffRepository.deleteById(staffId);
+        auditLogService.delete("STAFF", staff.getStaffCode() + " (" + staff.getName() + ") has been deleted");
     }
 
     private Staff find(String staffId) {

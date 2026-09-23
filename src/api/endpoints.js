@@ -43,6 +43,7 @@ export const endpoints = {
 
   // Admin > Configuration: live MongoDB connection, version, sizes and collections.
   getDatabaseStatus: () => api.get('/api/admin/system/database'),
+  getSystemLogs: () => api.get('/api/admin/system/logs'),
 
   // Admin > Staff Management: the maintenance workforce roster.
   getStaff: () => api.get('/api/admin/staff'),
