@@ -59,7 +59,7 @@ public class GeminiTriageService {
 
         try {
             String prompt = buildPrompt(category, title, description, location);
-            String responseText = callGemini(prompt, attachments);
+            String responseText = callGeminiWithRetry(prompt, attachments);
             TriageResult parsed = parseResponse(responseText);
             if (parsed != null) {
                 return parsed;
@@ -103,6 +103,28 @@ public class GeminiTriageService {
                 """.formatted(category, title, location, description);
     }
 
+    /**
+     * Calls Gemini, retrying once after a short backoff if the first attempt
+     * fails. Gemini occasionally returns transient errors (e.g. HTTP 503
+     * "model overloaded") that succeed on a second try, so without this a
+     * single blip would silently drop every affected ticket to the keyword
+     * fallback and its default "Medium" severity.
+     */
+    private String callGeminiWithRetry(String prompt, List<Attachment> attachments) throws Exception {
+        try {
+            return callGemini(prompt, attachments);
+        } catch (Exception first) {
+            log.warn("Gemini call failed once ({}), retrying...", first.getMessage());
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw first;
+            }
+            return callGemini(prompt, attachments);
+        }
+    }
+
     private String callGemini(String prompt, List<Attachment> attachments) throws Exception {
         String model = appProperties.getGemini().getModel();
         String url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
@@ -128,6 +150,8 @@ public class GeminiTriageService {
         }
 
         var generationConfig = requestBody.putObject("generationConfig");
+        var thinkingConfig = generationConfig.putObject("thinkingConfig");
+        thinkingConfig.put("thinkingLevel", "low");
         generationConfig.put("responseMimeType", "application/json");
         generationConfig.put("temperature", 0.2);
 
@@ -180,13 +204,20 @@ public class GeminiTriageService {
     private TriageResult keywordFallback(String category, String description) {
         String text = (category + " " + description).toLowerCase(Locale.ROOT);
 
-        if (containsAny(text, "gas", "smoke", "fire", "flood", "no heat", "exposed wire", "sparking", "carbon monoxide")) {
+        if (containsAny(text, "gas", "smoke", "fire", "flood", "flooding", "no heat", "exposed wire", "sparking",
+                "carbon monoxide", "burning smell", "shock", "electrocut", "break in", "break-in", "intruder",
+                "can't lock", "cannot lock", "door won't lock", "ceiling collaps", "gushing")) {
             return new TriageResult("Critical", "This may be a safety hazard - if you smell gas or see fire/sparking, evacuate and call emergency services.", "");
         }
-        if (containsAny(text, "leak", "no hot water", "no water", "broken lock", "not cooling", "not heating", "electrical")) {
+        if (containsAny(text, "leak", "leaking", "dripping", "no hot water", "no water", "broken lock",
+                "not cooling", "not heating", "no ac", "no a/c", "electrical", "outlet not working",
+                "appliance broken", "refrigerator not working", "fridge not working", "oven not working",
+                "stove not working", "washer not working", "dryer not working", "water heater", "pest", "mold",
+                "mould", "clogged", "backed up", "sewage")) {
             return new TriageResult("Severe", "", "");
         }
-        if (containsAny(text, "noisy", "slow drain", "loose", "squeak", "stuck")) {
+        if (containsAny(text, "noisy", "slow drain", "loose", "squeak", "squeaky", "stuck", "cosmetic", "scuff",
+                "paint chip", "light bulb", "dim light", "flicker", "sticky door", "sticky window")) {
             return new TriageResult("Low", "", "");
         }
         return new TriageResult("Medium", "", "");
