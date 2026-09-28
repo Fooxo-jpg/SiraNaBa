@@ -16,7 +16,7 @@ const OVERRIDES = [
 ];
 
 export default function IoTEmergency() {
-  const { activeCriticalAlerts, bannerText, alerts, telemetry, emergencyPersonnel, incidentCommand } = iotEmergency;
+  const { activeCriticalAlerts, bannerText, alerts, telemetry, incidentCommand } = iotEmergency;
   const [tab, setTab] = useState('Feed');
   const [dismissed, setDismissed] = useState(false);
   const [confirmOverride, setConfirmOverride] = useState(null);
@@ -185,45 +185,6 @@ export default function IoTEmergency() {
                   </div>
                 </div>
               </div>
-            </Card>
-
-            <Card className="p-5">
-              <p className="mb-3 font-semibold text-ink-900">Emergency Personnel</p>
-              <p className="mb-3 -mt-2 text-xs text-ink-700/50">Live GPS dispatch status</p>
-              <div className="space-y-3">
-                {emergencyPersonnel.length === 0 && (
-                  <p className="py-2 text-center text-xs text-ink-700/50">No personnel on duty.</p>
-                )}
-                {emergencyPersonnel.map((p) => (
-                  <div key={p.name} className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sand-100 text-[9px] font-semibold text-ink-700/60">
-                        {p.name
-                          .split(' ')
-                          .map((n) => n[0])
-                          .join('')
-                          .slice(0, 2)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-ink-900">{p.name}</p>
-                        <p className="text-xs text-ink-700/50">{p.role}</p>
-                      </div>
-                    </div>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        p.status === 'Active'
-                          ? 'bg-status-successBg text-status-success'
-                          : 'bg-status-progressBg text-status-progress'
-                      }`}
-                    >
-                      {p.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <button className="mt-3 flex w-full items-center justify-between text-xs font-medium text-forest-600 hover:underline">
-                View Sector Assignments <Icon name="chevronRight" size={13} />
-              </button>
             </Card>
 
             <Card className="p-5">

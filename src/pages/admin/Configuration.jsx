@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import Card from '../../components/Card.jsx';
+import Modal from '../../components/Modal.jsx';
+import { useTenantRegistry } from '../../context/TenantRegistryContext.jsx';
 import Icon from '../../components/Icon.jsx';
 import { configuration } from '../../data/adminMockDb.js';
 import { endpoints } from '../../api/endpoints.js';
@@ -117,6 +119,13 @@ export default function Configuration() {
   const { systemStatus, version, sessionRemaining } = configuration;
   const [tab, setTab] = useState('logs');
   const [query, setQuery] = useState('');
+  const { clearAfterDatabaseCleanup } = useTenantRegistry();
+  const [cleanOpen, setCleanOpen] = useState(false);
+  const [cleanPassword, setCleanPassword] = useState('');
+  const [cleanConfirmation, setCleanConfirmation] = useState('');
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanError, setCleanError] = useState('');
+  const [cleanResult, setCleanResult] = useState(null);
 
   // Live MongoDB status (GET /api/admin/system/database). Re-checked every 30s.
   const [db, setDb] = useState(null);
@@ -157,6 +166,35 @@ export default function Configuration() {
     checkDb();
   }, [checkDb]);
   useAutoRefresh(checkDb, { intervalMs: 30000 });
+
+  const closeClean = () => {
+    if (cleaning) return;
+    setCleanOpen(false);
+    setCleanPassword('');
+    setCleanConfirmation('');
+    setCleanError('');
+  };
+  const cleanDatabase = async (event) => {
+    event.preventDefault();
+    if (cleaning || cleanConfirmation !== 'DELETE ALL DATA' || !cleanPassword || !db?.connected || dbError) return;
+    setCleaning(true);
+    setCleanError('');
+    setCleanResult(null);
+    try {
+      const result = await endpoints.cleanDatabase({ password: cleanPassword, confirmation: cleanConfirmation, database: db.database });
+      clearAfterDatabaseCleanup();
+      setLogs([]);
+      setCleanResult(result);
+      setCleanOpen(false);
+      setCleanConfirmation('');
+      await checkDb();
+    } catch (error) {
+      setCleanError(error.status && error.status < 500 ? error.message : `${error.message || 'Cleanup could not be confirmed.'} If the connection was interrupted, check the Database tab before retrying; some data may already have been deleted.`);
+    } finally {
+      setCleanPassword('');
+      setCleaning(false);
+    }
+  };
 
   // The "MongoDB Store" card is live; the other cards are still placeholders.
   const dbUp = !dbError && db?.connected;
@@ -286,6 +324,15 @@ export default function Configuration() {
           </Card>
         ) : tab === 'database' ? (
           <DatabasePanel db={db} error={dbError} refreshing={refreshing} onRefresh={checkDb} />
+        ) : tab === 'advanced' ? (
+          <Card className="border border-status-high/20 p-5">
+            <h2 className="font-semibold text-ink-900">Clean database</h2>
+            <p className="mt-2 text-sm text-ink-700/70">Permanently delete all application data from <strong>{db?.database || 'the connected database'}</strong>, including tenants and their logins, staff, tickets, attachments, billing, payments, notifications, and logs. All admin login accounts and passwords will be kept.</p>
+            <p className="mt-2 text-sm text-status-high">This cannot be undone in the app. Restore from a database backup if recovery is needed.</p>
+            {cleanResult && <p role="status" className="mt-3 text-sm text-status-success">Cleanup complete: {cleanResult.deletedDocuments} records deleted; {cleanResult.preservedAdmins} admin accounts preserved.</p>}
+            <button type="button" disabled={!db?.connected || !!dbError || cleaning} onClick={() => { setCleanResult(null); setCleanOpen(true); }} className="mt-4 rounded-md bg-status-high px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Clean database…</button>
+            {(!db?.connected || dbError) && <p className="mt-2 text-xs text-ink-700/60">A confirmed database connection is required. Refresh the Database tab to check it.</p>}
+          </Card>
         ) : (
           <Card className="flex flex-col items-center justify-center gap-2 p-10 text-center text-sm text-ink-700/50">
             <Icon name="info" size={18} className="text-ink-700/30" />
@@ -304,6 +351,18 @@ export default function Configuration() {
           </span>
         </div>
       </div>
+      <Modal open={cleanOpen} onClose={closeClean} title="Permanently clean database?" footer={<>
+        <button type="button" onClick={closeClean} disabled={cleaning} className="rounded-md border border-black/10 px-3 py-2 text-sm disabled:opacity-50">Cancel</button>
+        <button type="submit" form="database-cleanup" disabled={cleaning || cleanConfirmation !== 'DELETE ALL DATA' || !cleanPassword || !db?.connected || !!dbError} className="rounded-md bg-status-high px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{cleaning ? 'Cleaning…' : 'Delete all data except admins'}</button>
+      </>}>
+        <form id="database-cleanup" onSubmit={cleanDatabase} className="space-y-4">
+          <p>Database: <strong>{db?.database}</strong>. Every application record except admin accounts will be permanently deleted. Demo data will not be recreated on restart.</p>
+          <label className="block">Current admin password<input type="password" autoComplete="current-password" required disabled={cleaning} value={cleanPassword} onChange={(event) => setCleanPassword(event.target.value)} className="mt-1 block w-full rounded-md border border-black/20 px-3 py-2" /></label>
+          <label className="block">Type <strong>DELETE ALL DATA</strong> to confirm<input autoComplete="off" required disabled={cleaning} value={cleanConfirmation} onChange={(event) => setCleanConfirmation(event.target.value)} className="mt-1 block w-full rounded-md border border-black/20 px-3 py-2" /></label>
+          {cleaning && <p role="status">Waiting for active work to finish, then cleaning. Keep this page open.</p>}
+          {cleanError && <p role="alert" className="text-status-high">{cleanError}</p>}
+        </form>
+      </Modal>
     </AdminLayout>
   );
 }

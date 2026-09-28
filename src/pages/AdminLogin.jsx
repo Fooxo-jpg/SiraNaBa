@@ -40,7 +40,7 @@ export default function AdminLogin() {
       <div className="relative w-full max-w-sm rounded-card bg-white p-8 shadow-xl">
         <div className="mb-6 flex flex-col items-center text-center">
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-forest-500 text-white">
-            <Icon name="shield" size={20} />
+            <Icon name="homeCheck" size={20} />
           </div>
           <h1 className="text-lg font-bold text-ink-900">SiraNaBa</h1>
           <p className="text-xs font-semibold tracking-wide text-ink-700/40">

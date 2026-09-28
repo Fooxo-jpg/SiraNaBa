@@ -46,7 +46,7 @@ export default function Layout({ crumb, children }) {
   };
 
   return (
-    <AppShell navItems={navItems} brandIcon="grid">
+    <AppShell navItems={navItems} brandIcon="homeCheck">
       <PageHeader
         crumb={crumb}
         user={user}

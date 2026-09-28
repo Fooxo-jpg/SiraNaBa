@@ -7,16 +7,10 @@ import com.siranaba.backend.exception.ApiException;
 import com.siranaba.backend.exception.ResourceNotFoundException;
 import com.siranaba.backend.model.Billing;
 import com.siranaba.backend.model.Billing.PaymentMethod;
-import com.siranaba.backend.model.Cta;
-import com.siranaba.backend.model.NotificationDoc;
 import com.siranaba.backend.model.Tenant;
-import com.siranaba.backend.repository.BillingRepository;
-import com.siranaba.backend.repository.NotificationRepository;
-import com.siranaba.backend.repository.TenantRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -29,22 +23,17 @@ public class BillingService {
 
     private static final ZoneId MANILA = ZoneId.of("Asia/Manila");
 
-    private final BillingRepository billingRepository;
-    private final TenantRepository tenantRepository;
-    private final NotificationRepository notificationRepository;
+    private final BillingLedgerService ledger;
     private final TenantContext tenantContext;
 
-    public BillingService(BillingRepository billingRepository, TenantRepository tenantRepository,
-                          NotificationRepository notificationRepository, TenantContext tenantContext) {
-        this.billingRepository = billingRepository;
-        this.tenantRepository = tenantRepository;
-        this.notificationRepository = notificationRepository;
+    public BillingService(BillingLedgerService ledger, TenantContext tenantContext) {
+        this.ledger = ledger;
         this.tenantContext = tenantContext;
     }
 
     public Billing getBilling() {
         Tenant tenant = tenantContext.currentTenant();
-        return withTenantFields(load(tenant.getId()), tenant);
+        return load(tenant.getId());
     }
 
     // ---- Payment methods -------------------------------------------------
@@ -106,7 +95,7 @@ public class BillingService {
         method.setPrimary(makePrimary);
         methods.add(method);
         billing.setPaymentMethods(methods);
-        return withTenantFields(billingRepository.save(billing), tenant);
+        return ledger.saveMethods(billing);
     }
 
     public Billing setPrimary(String methodId) {
@@ -114,7 +103,7 @@ public class BillingService {
         Billing billing = load(tenant.getId());
         findMethod(billing, methodId); // 404 if it isn't theirs
         billing.getPaymentMethods().forEach(m -> m.setPrimary(m.getId().equals(methodId)));
-        return withTenantFields(billingRepository.save(billing), tenant);
+        return ledger.saveMethods(billing);
     }
 
     public Billing removePaymentMethod(String methodId) {
@@ -127,19 +116,16 @@ public class BillingService {
             methods.get(0).setPrimary(true); // never leave the tenant with methods but no primary
         }
         billing.setPaymentMethods(methods);
-        return withTenantFields(billingRepository.save(billing), tenant);
+        return ledger.saveMethods(billing);
     }
 
     // ---- Pay the balance --------------------------------------------------
 
     public PaymentReceipt pay(PayRequest req) {
-        Tenant tenant = tenantContext.currentTenant();
-        double amount = tenant.getCurrentBalance();
-        if (amount <= 0) {
-            throw bad("You have no outstanding balance to pay.");
-        }
-        Billing billing = load(tenant.getId());
-
+        String tenantId = tenantContext.currentTenant().getId();
+        return ledger.mutate(tenantId, billing -> {
+            var prior = billing.getTransactions().stream().filter(t -> req.idempotencyKey() != null && req.idempotencyKey().equals(t.getIdempotencyKey())).findFirst().orElse(null);
+            if (prior != null) return PaymentReceipt.from(BillingAccounting.pay(billing, req, prior.getPaymentMode(), true));
         String mode;
         if (req.paymentMethodId() != null && !req.paymentMethodId().isBlank()) {
             mode = describe(findMethod(billing, req.paymentMethodId()));
@@ -153,77 +139,13 @@ public class BillingService {
             };
         }
 
-        Instant paidAt = Instant.now();
-        String reference = PaymentReferences.next(paidAt);
 
-        // Test scenario: every GCash attempt is declined. Persist it exactly
-        // like a gateway response so it appears in both the tenant history and
-        // the admin transaction/audit log, while leaving the balance untouched.
-        if (mode.startsWith("GCash")) {
-            List<Billing.Transaction> transactions = new ArrayList<>(billing.getTransactions());
-            transactions.add(0, new Billing.Transaction(reference, "Rent payment (test failure)",
-                    paidAt.atZone(MANILA).toLocalDate().toString(), amount, "Failed", mode, paidAt));
-            billing.setTransactions(transactions);
-            billing.setTotalTransactionCount(billing.getTotalTransactionCount() + 1);
-            billingRepository.save(billing);
-
-            NotificationDoc note = new NotificationDoc();
-            note.setTenantId(tenant.getId());
-            note.setCategory("Payments");
-            note.setTitle("Payment failed");
-            note.setBody(String.format(Locale.ENGLISH,
-                    "Your test payment of PHP %,.2f via %s was declined. No funds were collected. Reference code: %s.",
-                    amount, mode, reference));
-            note.setTimestamp(paidAt);
-            note.setCta(new Cta("View Billing", "/billing"));
-            notificationRepository.save(note);
-
-            return new PaymentReceipt(reference, paidAt, mode, amount, "Failed");
-        }
-
-        tenant.setCurrentBalance(0);
-        tenantRepository.save(tenant);
-
-        List<Billing.Transaction> transactions = new ArrayList<>(billing.getTransactions());
-        transactions.add(0, new Billing.Transaction(reference, "Rent payment",
-                paidAt.atZone(MANILA).toLocalDate().toString(), amount, "Successful", mode, paidAt));
-        billing.setTransactions(transactions);
-        billing.setTotalTransactionCount(billing.getTotalTransactionCount() + 1);
-        billing.setBreakdown(new ArrayList<>()); // everything owed has just been paid
-        billingRepository.save(billing);
-
-        NotificationDoc note = new NotificationDoc();
-        note.setTenantId(tenant.getId());
-        note.setCategory("Payments");
-        note.setTitle("Payment received");
-        note.setBody(String.format(Locale.ENGLISH,
-                "Your payment of PHP %,.2f via %s was successful. Reference code: %s.", amount, mode, reference));
-        note.setTimestamp(paidAt);
-        note.setCta(new Cta("View Billing", "/billing"));
-        notificationRepository.save(note);
-
-        return new PaymentReceipt(reference, paidAt, mode, amount, "Successful");
+            // No provider integration exists: all tenant checkout payments are explicitly simulated.
+            return PaymentReceipt.from(BillingAccounting.pay(billing, req, mode, true));
+        });
     }
 
-    // ---- helpers ---------------------------------------------------------
-
-    private Billing load(String tenantId) {
-        // No record yet (or it was cleared) means an empty billing page, not an error.
-        return billingRepository.findByTenantId(tenantId).orElseGet(() -> Billing.empty(tenantId));
-    }
-
-    /**
-     * The tenant record is the single source of truth for what's owed, when it's
-     * due and whether auto-pay is on - the admin portal edits those there (e.g.
-     * "Mark as Paid"). Overlay them so this page can't disagree with the dashboard
-     * or the admin table. Response only; callers never save this overlay back.
-     */
-    private static Billing withTenantFields(Billing billing, Tenant tenant) {
-        billing.setCurrentBalanceDue(tenant.getCurrentBalance());
-        billing.setDueDate(tenant.getRentDueDate());
-        billing.setAutoPayActive(tenant.isAutoPayEnabled());
-        return billing;
-    }
+    private Billing load(String tenantId) { return ledger.get(tenantId); }
 
     private static PaymentMethod findMethod(Billing billing, String id) {
         return billing.getPaymentMethods().stream()

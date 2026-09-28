@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "test": "node --test src/utils/ticketReports.test.js src/utils/triageStats.test.js src/components/billing/BillingDetails.test.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

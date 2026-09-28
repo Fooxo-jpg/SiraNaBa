@@ -66,7 +66,7 @@ function SidebarContent({ onNavigate }) {
       <div>
         <div className="flex items-center gap-2 px-2 pb-8 pt-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-forest-500 text-white">
-            <Icon name="grid" size={16} />
+            <Icon name="homeCheck" size={16} />
           </div>
           <span className="text-base font-bold text-ink-900">SiraNaBa</span>
         </div>

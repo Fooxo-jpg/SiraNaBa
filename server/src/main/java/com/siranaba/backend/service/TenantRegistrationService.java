@@ -29,11 +29,12 @@ public class TenantRegistrationService {
     private final EmailService emailService;
     private final TenantCodeService tenantCodeService;
     private final AuditLogService auditLogService;
+    private final BillingLedgerService ledger;
 
     public TenantRegistrationService(TenantRepository tenantRepository, UserRepository userRepository,
                                      BillingRepository billingRepository, NotificationRepository notificationRepository,
                                      PasswordEncoder passwordEncoder, EmailService emailService,
-                                     TenantCodeService tenantCodeService, AuditLogService auditLogService) {
+                                     TenantCodeService tenantCodeService, AuditLogService auditLogService, BillingLedgerService ledger) {
         this.tenantRepository = tenantRepository;
         this.userRepository = userRepository;
         this.billingRepository = billingRepository;
@@ -42,6 +43,7 @@ public class TenantRegistrationService {
         this.emailService = emailService;
         this.tenantCodeService = tenantCodeService;
         this.auditLogService = auditLogService;
+        this.ledger = ledger;
     }
 
     public RegisterTenantResponse register(RegisterTenantRequest req) {
@@ -82,7 +84,6 @@ public class TenantRegistrationService {
         tenant.setMonthlyRent(rent);
         tenant.setLeaseStart(leaseStart.toString());
         tenant.setRentDueDate(due.toString());
-        tenant.setCurrentBalance(rent);
         tenant.setDaysUntilRentDue((int) daysUntilDue);
         tenant.setAutoPayEnabled(false);
         tenant.setManagementTools(List.of(
@@ -99,7 +100,7 @@ public class TenantRegistrationService {
             user.setTenantId(tenant.getId());
             user.setRole("TENANT");
             userRepository.save(user);
-            billingRepository.save(Billing.empty(tenant.getId()));
+            billingRepository.save(BillingLedgerService.initial(tenant));
 
             NotificationDoc welcome = new NotificationDoc();
             welcome.setTenantId(tenant.getId());
@@ -158,7 +159,15 @@ public class TenantRegistrationService {
     public void remove(String tenantId) {
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found."));
-        removeTenantData(tenantId);
+        // Account removal must not erase the financial audit trail.
+        ledger.mutate(tenantId, b -> {
+            b.setArchived(true);
+            b.setTenantSnapshot(new Billing.TenantSnapshot(tenant.getTenantCode(), tenant.getFirstName(), tenant.getLastName(), tenant.getUnit(), tenant.getBuilding()));
+            return b;
+        });
+        userRepository.deleteByTenantId(tenantId);
+        notificationRepository.deleteByTenantId(tenantId);
+        tenantRepository.deleteById(tenantId);
         auditLogService.delete("TENANT", tenant.getTenantCode() + " — "
                 + (tenant.getFirstName() + " " + tenant.getLastName()).trim() + " has been removed");
     }

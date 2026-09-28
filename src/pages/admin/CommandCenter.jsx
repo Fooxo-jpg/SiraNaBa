@@ -1,182 +1,100 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { endpoints } from '../../api/endpoints.js';
+import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
+import { TicketReportSummary, AIReportAnalysis, useTicketReports } from '../../components/admin/TicketReports.jsx';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import StatCard from '../../components/admin/StatCard.jsx';
 import Card from '../../components/Card.jsx';
 import Icon from '../../components/Icon.jsx';
-import StatusBadge from '../../components/StatusBadge.jsx';
+
 import { commandCenter } from '../../data/adminMockDb.js';
 
-const LOG_STYLES = {
-  log: 'text-white/50',
-  ok: 'text-forest-300',
-  err: 'text-status-high',
-};
-
 export default function CommandCenter() {
-  const { stats, systemHealth, dispatchQueue, eventStream, staffReadiness, systemIntegrity } = commandCenter;
+  const { staffReadiness } = commandCenter;
+  const [metrics, setMetrics] = useState(null);
+  const [metricsError, setMetricsError] = useState('');
+  const [staff, setStaff] = useState(null);
+  const [staffError, setStaffError] = useState('');
+  const loadStaff = async () => {
+    try {
+      setStaff(await endpoints.getStaff());
+      setStaffError('');
+    } catch (error) {
+      setStaff(null);
+      setStaffError(error.message || 'Could not load staff readiness.');
+    }
+  };
+  useEffect(() => { loadStaff(); }, []);
+  useAutoRefresh(loadStaff);
+  const onlineStaff = staff?.filter((member) => member.availability === 'online').length ?? 0;
+  const totalStaff = staff?.length ?? 0;
+  const loadMetrics = async () => {
+    try {
+      setMetrics(await endpoints.getCommandCenter());
+      setMetricsError('');
+    } catch (error) {
+      setMetricsError(error.message || 'Could not load dashboard statistics.');
+      setMetrics(null);
+    }
+  };
+  useEffect(() => { loadMetrics(); }, []);
+  useAutoRefresh(loadMetrics);
+  const duration = (seconds) => {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor(seconds % 3600 / 60)}m`;
+    return `${Math.floor(seconds / 86400)}d ${Math.floor(seconds % 86400 / 3600)}h`;
+  };
+  const previous = metrics?.yesterdayActiveIncidents;
+  const change = previous > 0 ? (metrics.activeIncidents - previous) / previous * 100 : null;
+  const incidentDelta = !metrics ? '' : previous == null ? 'Yesterday comparison unavailable'
+    : previous === 0 ? metrics.activeIncidents === 0 ? '0% from yesterday' : 'From 0 yesterday · % unavailable'
+    : `${change > 0 ? '+' : ''}${change.toFixed(1)}% from yesterday`;
+  const value = (key) => metrics ? metrics[key].toLocaleString() : '—';
+  const stats = [
+    { id: 'incidents', label: 'Active Incidents', value: value('activeIncidents'), delta: incidentDelta, tone: change > 0 ? 'danger' : change < 0 ? 'success' : 'neutral', icon: 'alert', tag: 'As of today' },
+    { id: 'uptime', label: 'System Uptime', value: metrics ? duration(metrics.uptimeSeconds) : '—', delta: 'Since last server start', icon: 'trend' },
+    { id: 'dispatch', label: 'Pending Dispatch', value: value('pendingDispatch'), delta: !metrics ? '' : metrics.averageAutoAssignmentSeconds == null ? 'No automatic assignments yet' : `Avg. AI assignment: ${duration(metrics.averageAutoAssignmentSeconds)}`, icon: 'clock' },
+    { id: 'tenants', label: 'Total Tenants', value: value('totalTenants'), delta: 'Registered tenant accounts', icon: 'users' },
+  ];
+  const reports = useTicketReports();
 
   return (
     <AdminLayout crumb="Command Center">
       <div className="space-y-6">
+        {metricsError && <p role="alert" className="text-sm text-status-high">Statistics unavailable: {metricsError} <button type="button" onClick={loadMetrics} className="underline">Retry</button></p>}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {stats.map((s) => (
             <StatCard key={s.id} {...s} />
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <Card className="p-6 lg:col-span-2">
-            <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-forest-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-forest-500" /> Live System Health
-            </p>
-            <div className="flex flex-col gap-5 sm:flex-row">
-              <div className="flex-1">
-                <h2 className="text-lg font-bold text-ink-900">{systemHealth.title}</h2>
-                <p className="mt-1.5 text-sm leading-relaxed text-ink-700/60">{systemHealth.description}</p>
-                <div className="mt-4 grid grid-cols-2 gap-4">
-                  {systemHealth.metrics.map((m) => (
-                    <div key={m.label}>
-                      <p className="text-xs font-medium text-ink-700/50">{m.label}</p>
-                      <p className="font-mono text-sm font-semibold text-ink-900">{m.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex h-40 w-full flex-shrink-0 items-center justify-center rounded-lg bg-ink-900 text-white/30 sm:w-48">
-                <Icon name="wifi" size={28} />
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold text-ink-900">Dispatch Queue</h2>
-              <span className="rounded-full bg-forest-100 px-2 py-0.5 text-xs font-semibold text-forest-700">
-                {dispatchQueue.length} New
-              </span>
-            </div>
-            <p className="mb-3 text-xs text-ink-700/50">High-priority unassigned work orders.</p>
-            <div className="space-y-2.5">
-              {dispatchQueue.length === 0 && (
-                <p className="rounded-lg border border-dashed border-black/10 py-6 text-center text-xs text-ink-700/50">
-                  No unassigned work orders.
-                </p>
-              )}
-              {dispatchQueue.map((wo) => (
-                <div key={wo.id} className="rounded-lg border border-black/5 p-3">
-                  <p className="mb-0.5 text-xs font-medium text-ink-700/50">
-                    {wo.id} • {wo.age}
-                  </p>
-                  <p className="text-sm font-semibold text-ink-900">{wo.title}</p>
-                  <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-700/50">
-                    <Icon name="chevronRight" size={11} /> {wo.location}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <Link
-              to="/admin/triage"
-              className="mt-4 block rounded-md bg-forest-500 py-2 text-center text-sm font-semibold text-white hover:bg-forest-600"
-            >
-              Go to Triage Queue
-            </Link>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <Card className="p-6 lg:col-span-2">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="font-semibold text-ink-900">Incoming Event Stream</h2>
-                <p className="text-xs text-ink-700/50">Real-time log of IoT and security triggers across all facilities.</p>
-              </div>
-              <div className="flex gap-2">
-                <button className="flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-medium hover:bg-sand-100">
-                  <Icon name="filter" size={13} /> Filter
-                </button>
-                <button className="flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-medium hover:bg-sand-100">
-                  <Icon name="download" size={13} /> Export
-                </button>
-              </div>
-            </div>
-            <div className="overflow-x-auto thin-scrollbar">
-              <table className="w-full min-w-[560px] text-sm">
-                <thead>
-                  <tr className="border-b border-black/5 text-left text-xs font-semibold uppercase tracking-wide text-ink-700/40">
-                    <th className="pb-2 pr-3 font-semibold">Timestamp</th>
-                    <th className="pb-2 pr-3 font-semibold">Asset ID</th>
-                    <th className="pb-2 pr-3 font-semibold">Event Type</th>
-                    <th className="pb-2 pr-3 font-semibold">Priority</th>
-                    <th className="pb-2 font-semibold text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-black/5">
-                  {eventStream.map((e, i) => (
-                    <tr key={i}>
-                      <td className="py-2.5 pr-3 font-mono text-xs text-ink-700/60">{e.time}</td>
-                      <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink-900">{e.assetId}</td>
-                      <td className="py-2.5 pr-3 text-ink-900">{e.event}</td>
-                      <td className="py-2.5 pr-3">
-                        <StatusBadge label={e.priority} />
-                      </td>
-                      <td className="py-2.5 text-right">
-                        <button aria-label="Open event" className="text-ink-700/40 hover:text-forest-600">
-                          <Icon name="external" size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {eventStream.length === 0 && (
-                <p className="py-8 text-center text-sm text-ink-700/50">No events recorded yet.</p>
-              )}
-            </div>
-            <button
-              disabled={eventStream.length === 0}
-              className="mt-4 block w-full text-center text-sm font-medium text-forest-600 hover:underline disabled:cursor-not-allowed disabled:text-ink-700/30 disabled:no-underline"
-            >
-              Load More Activity
-            </button>
-          </Card>
-
-          <div className="space-y-6">
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+          <TicketReportSummary {...reports} />
+          <div className="min-w-0 space-y-6">
+            <AIReportAnalysis {...reports} />
             <Card className="p-5">
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-700/50">Staff Readiness</p>
               <div className="mb-3">
                 <div className="mb-1 flex items-center justify-between text-sm">
-                  <span className="text-ink-700/70">On-site Technicians</span>
-                  <span className="font-semibold text-ink-900">
-                    {staffReadiness.onSiteTechnicians.current} / {staffReadiness.onSiteTechnicians.total}
+                  <span className="text-ink-700/70">Online staff / Total staff</span>
+                  <span className="font-semibold text-ink-900" aria-live="polite">
+                    {staff ? `${onlineStaff} / ${totalStaff}` : '— / —'}
                   </span>
                 </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-sand-100">
+                {staff && <div role="progressbar" aria-label="Online staff" aria-valuemin={0} aria-valuemax={100} aria-valuenow={totalStaff ? Math.round(onlineStaff / totalStaff * 100) : 0} aria-valuetext={`${onlineStaff} online out of ${totalStaff} staff`} className="h-1.5 w-full overflow-hidden rounded-full bg-sand-100">
                   <div
                     className="h-full rounded-full bg-forest-500"
                     style={{
                       width: `${
-                        staffReadiness.onSiteTechnicians.total
-                          ? (staffReadiness.onSiteTechnicians.current / staffReadiness.onSiteTechnicians.total) * 100
+                        totalStaff
+                          ? (onlineStaff / totalStaff) * 100
                           : 0
                       }%`,
                     }}
                   />
-                </div>
-              </div>
-              <div className="mb-4">
-                <div className="mb-1 flex items-center justify-between text-sm">
-                  <span className="text-ink-700/70">Inventory Availability</span>
-                  <span className="font-semibold text-ink-900">
-                    {Math.round(staffReadiness.inventoryAvailability * 100)}%
-                  </span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-sand-100">
-                  <div
-                    className="h-full rounded-full bg-forest-500"
-                    style={{ width: `${staffReadiness.inventoryAvailability * 100}%` }}
-                  />
-                </div>
+                </div>}
+                {staffError ? <p role="alert" className="mt-2 text-xs text-status-high">Staff readiness unavailable. <button type="button" onClick={loadStaff} className="underline">Retry</button></p> : !staff && <p role="status" className="mt-2 text-xs text-ink-700/50">Loading staff…</p>}
               </div>
               <div className="space-y-2.5 border-t border-black/5 pt-3">
                 <div className="flex items-center gap-2.5 text-sm">
@@ -196,20 +114,6 @@ export default function CommandCenter() {
               </div>
             </Card>
 
-            <Card className="bg-ink-900 p-5 text-white">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wide text-white/60">System Integrity</p>
-                <Icon name="dots" size={14} className="text-white/40" />
-              </div>
-              <div className="space-y-1.5 font-mono text-xs">
-                {systemIntegrity.length === 0 && <p className="text-white/40">&gt; No system events.</p>}
-                {systemIntegrity.map((line, i) => (
-                  <p key={i} className={LOG_STYLES[line.level]}>
-                    [{line.level.toUpperCase()}] {line.text}
-                  </p>
-                ))}
-              </div>
-            </Card>
           </div>
         </div>
       </div>

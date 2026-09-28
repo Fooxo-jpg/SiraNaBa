@@ -25,8 +25,10 @@ public class AdminPaymentService {
 
     private final BillingRepository billingRepository;
     private final TenantRepository tenantRepository;
+    private final BillingLedgerService ledger;
 
-    public AdminPaymentService(BillingRepository billingRepository, TenantRepository tenantRepository) {
+    public AdminPaymentService(BillingRepository billingRepository, TenantRepository tenantRepository, BillingLedgerService ledger) {
+        this.ledger = ledger;
         this.billingRepository = billingRepository;
         this.tenantRepository = tenantRepository;
     }
@@ -37,8 +39,8 @@ public class AdminPaymentService {
         tenantRepository.findAll().forEach(t -> tenants.put(t.getId(), t));
 
         return billingRepository.findAll().stream()
-                .filter(b -> tenants.containsKey(b.getTenantId())) // skip records of removed tenants
-                .flatMap(b -> b.getTransactions().stream().map(tx -> toResponse(tenants.get(b.getTenantId()), tx)))
+                .filter(b -> tenants.containsKey(b.getTenantId()) || (b.isArchived() && b.getTenantSnapshot() != null))
+                .flatMap(b -> b.getTransactions().stream().map(tx -> toResponse(tenants.getOrDefault(b.getTenantId(), archivedTenant(b)), tx)))
                 .sorted(Comparator.comparing(AdminPaymentResponse::paidAt, Comparator.nullsLast(Comparator.<Instant>reverseOrder()))
                         .thenComparing(AdminPaymentResponse::date, Comparator.nullsLast(Comparator.<String>reverseOrder())))
                 .limit(Math.max(1, Math.min(limit, 200)))
@@ -46,18 +48,29 @@ public class AdminPaymentService {
     }
 
     public TenantPaymentsResponse forTenant(String tenantId) {
-        Tenant tenant = tenantRepository.findById(tenantId)
-                .orElseThrow(() -> new ResourceNotFoundException("Tenant not found."));
-        Billing billing = billingRepository.findByTenantId(tenantId).orElseGet(() -> Billing.empty(tenantId));
-        double totalPaid = billing.getTransactions().stream()
-                .filter(t -> "Successful".equals(t.getStatus()))
-                .mapToDouble(Billing.Transaction::getAmount)
-                .sum();
+        Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
+        Billing billing;
+        if (tenant != null) billing = ledger.get(tenantId);
+        else {
+            billing = billingRepository.findByTenantId(tenantId).filter(b -> b.isArchived() && b.getTenantSnapshot() != null)
+                    .orElseThrow(() -> new ResourceNotFoundException("Tenant billing not found."));
+            tenant = archivedTenant(billing);
+        }
         String name = ((tenant.getFirstName() == null ? "" : tenant.getFirstName()) + " "
                 + (tenant.getLastName() == null ? "" : tenant.getLastName())).trim();
-        return new TenantPaymentsResponse(tenant.getId(), tenant.getTenantCode(), name, totalPaid,
+        return new TenantPaymentsResponse(tenant.getId(), tenant.getTenantCode(), name, billing.getTotalPaid(),
                 billing.getTransactions(), billing.getPaymentMethods(), billing.getUtilityStatementPeriod(),
-                billing.getUtilityBreakdowns(), billing.getBreakdown());
+                billing.getUtilityBreakdowns(), billing.getBreakdown(), billing, AdminTenantService.ELECTRICITY_RATE);
+    }
+
+    private static Tenant archivedTenant(Billing b) {
+        Tenant t = new Tenant(); t.setId(b.getTenantId());
+        if (b.getTenantSnapshot() != null) {
+            var snapshot = b.getTenantSnapshot();
+            t.setTenantCode(snapshot.code()); t.setFirstName(snapshot.firstName()); t.setLastName(snapshot.lastName());
+            t.setUnit(snapshot.unit()); t.setBuilding(snapshot.building());
+        }
+        return t;
     }
 
     private static AdminPaymentResponse toResponse(Tenant t, Billing.Transaction tx) {
@@ -65,6 +78,6 @@ public class AdminPaymentService {
                 + (t.getLastName() == null ? "" : t.getLastName())).trim();
         Instant paidAt = tx.getPaidAt();
         return new AdminPaymentResponse(tx.getId(), t.getId(), t.getTenantCode(), name, t.getUnit(), t.getBuilding(),
-                tx.getTitle(), tx.getAmount(), tx.getPaymentMode(), paidAt, tx.getDate(), tx.getStatus());
+                tx.getTitle(), tx.getAmount(), tx.getPaymentMode(), paidAt, tx.getDate(), tx.getStatus(), tx.getPaymentType(), tx.getRentAllocation(), tx.getUtilityAllocation(), tx.isSimulated());
     }
 }

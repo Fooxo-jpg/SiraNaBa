@@ -1,115 +1,122 @@
 package com.siranaba.backend.model;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
+import com.fasterxml.jackson.annotation.*;
+import lombok.*;
+import org.springframework.data.annotation.*;
 import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.index.Indexed;
-
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-
-@Data
-@NoArgsConstructor
-@Document(collection = "billing")
+import java.math.BigDecimal;
+import java.time.*;
+import java.util.*;
+/** Model B: obligations, allocations and history commit atomically in one Mongo document. */
+@Data @NoArgsConstructor @Document(collection = "billing")
 public class Billing {
-
-    @Id
-    private String id;
-
-    @Indexed(unique = true)
-    @Field("tenantId")
-    private String tenantId;
-
-    private double currentBalanceDue;
-    private String dueDate;
-    private boolean autoPayActive;
-
-    private List<BreakdownLine> breakdown = new ArrayList<>();
-    /** Saved payment methods: cards, e-wallets (GCash, Maya) and online banking. */
-    private List<PaymentMethod> paymentMethods = new ArrayList<>();
-    private List<UtilityBreakdown> utilityBreakdowns = new ArrayList<>();
-    /** YYYY-MM for the utility statement currently shown to the tenant. */
-    private String utilityStatementPeriod;
+    @Id private String id;
+    @Version private Long version;
+    @Indexed(unique = true) private String tenantId;
+    private int schemaVersion;
+    private boolean reconciliationRequired;
+    @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal legacyOutstandingAmount;
+    private String reconciliationNote;
+    private Instant reconciledAt;
+    private String reconciledBy;
+    private boolean archived;
+    private TenantSnapshot tenantSnapshot;
+    public record TenantSnapshot(String code, String firstName, String lastName, String unit, String building) {}
+    private List<RentObligation> rentObligations = new ArrayList<>();
+    private List<UtilityStatement> utilityStatements = new ArrayList<>();
     private List<Transaction> transactions = new ArrayList<>();
-    private int totalTransactionCount;
-
-    /** A blank billing record: nothing owed, no payment method, no history. */
-    public static Billing empty(String tenantId) {
-        Billing b = new Billing();
-        b.setTenantId(tenantId);
-        return b;
+    private List<PaymentMethod> paymentMethods = new ArrayList<>();
+    @JsonIgnore private List<NotificationDoc> notificationOutbox = new ArrayList<>();
+    // Legacy evidence only; never the authority for new charges or payments.
+    @JsonIgnore private double currentBalanceDue;
+    @JsonIgnore private String dueDate;
+    @JsonIgnore private boolean autoPayActive;
+    @JsonIgnore private List<BreakdownLine> breakdown = new ArrayList<>();
+    @JsonIgnore private List<UtilityBreakdown> utilityBreakdowns = new ArrayList<>();
+    @JsonIgnore private String utilityStatementPeriod;
+    @JsonIgnore private int totalTransactionCount;
+    public static Billing empty(String tenantId) { Billing b = new Billing(); b.setTenantId(tenantId); return b; }
+    public BigDecimal getRentBalance() { return reconciliationRequired ? null : rentObligations.stream().map(RentObligation::getBalance).reduce(BigDecimal.ZERO, BigDecimal::add); }
+    public BigDecimal getRentPaid() { return rentObligations.stream().map(RentObligation::getPaid).reduce(BigDecimal.ZERO, BigDecimal::add); }
+    public BigDecimal getUtilityBalance() { return reconciliationRequired ? null : utilityStatements.stream().map(UtilityStatement::getBalance).reduce(BigDecimal.ZERO, BigDecimal::add); }
+    public BigDecimal getTotalOutstanding() { return reconciliationRequired ? null : getRentBalance().add(getUtilityBalance()); }
+    public BigDecimal getTotalPaid() { return transactions.stream().filter(t -> "PAID".equals(t.getStatus()) || "Successful".equals(t.getStatus())).map(Transaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add); }
+    public String getRentDueDate() { return rentObligations.stream().filter(r -> r.getBalance().signum() > 0).map(RentObligation::getDueDate).filter(Objects::nonNull).min(String::compareTo).orElse(null); }
+    public String getRentStatus() {
+        if (reconciliationRequired) return "REVIEW_REQUIRED";
+        if (getRentBalance().signum() == 0) return "PAID";
+        if (rentObligations.stream().anyMatch(r -> "OVERDUE".equals(r.getStatus()))) return "OVERDUE";
+        return rentObligations.stream().anyMatch(r -> r.getBalance().signum() > 0 && r.getPaid().signum() > 0) ? "PARTIALLY_PAID" : "UNPAID";
     }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class BreakdownLine {
-        private String label;
-        private double amount;
+    public int getPaymentCount() { return transactions.size(); }
+    public static String status(BigDecimal amount, BigDecimal paid, String dueDate) {
+        if (paid.compareTo(amount) >= 0) return "PAID";
+        if (dueDate != null && LocalDate.parse(dueDate).isBefore(LocalDate.now(ZoneId.of("Asia/Manila")))) return "OVERDUE";
+        return paid.signum() > 0 ? "PARTIALLY_PAID" : "UNPAID";
     }
-
-    /**
-     * A saved way to pay. Only display-safe data is stored: for cards that is the
-     * brand, last 4 digits, expiry and holder name - never the full card number or CVV.
-     */
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class PaymentMethod {
+    @Data @NoArgsConstructor public static class RentObligation {
         private String id;
-        /** CARD | EWALLET | BANK */
-        private String type;
-        /** Visa / Mastercard / ... for cards, GCash / Maya, or the bank name (BDO, BPI, RCBC, ...). */
-        private String provider;
-        private String accountName;
-        /** Last 4 digits of the card number, mobile number or bank account. */
-        private String last4;
-        /** MM/YY, cards only. */
-        private String expiry;
-
-        // Named `primary` on the Java side (Lombok's boolean getter for a field
-        // literally called "isPrimary" would be mis-parsed by Jackson as
-        // property "primary" and break the response); the JsonProperty pins
-        // the wire format to the exact key the front end expects.
-        @JsonProperty("isPrimary")
-        private boolean primary;
+        private String billingPeriod;
+        private String dueDate;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal amount = BigDecimal.ZERO;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal paid = BigDecimal.ZERO;
+        public BigDecimal getBalance() { return amount.subtract(paid); }
+        public String getStatus() { return status(amount, paid, dueDate); }
     }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class UtilityBreakdown {
+    @Data @NoArgsConstructor public static class UtilityStatement {
+        private boolean openingBalance;
         private String id;
-        private String label;
-        private Double value;
-        private String unit;
-        private String deltaLabel;
-        private String trend;
-        private double usageVsLimit;
+        private String billingPeriod;
+        private String statementDate;
+        private String dueDate;
+        private Instant createdAt;
+        private int revision = 1;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal waterUsage = BigDecimal.ZERO;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal waterRate = BigDecimal.ZERO;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal waterCharge = BigDecimal.ZERO;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal electricityUsage = BigDecimal.ZERO;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal electricityRate = BigDecimal.ZERO;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal electricityCharge = BigDecimal.ZERO;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal parkingCharge = BigDecimal.ZERO;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal amount = BigDecimal.ZERO;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal paid = BigDecimal.ZERO;
+        private List<UtilityRevision> revisions = new ArrayList<>();
+        public BigDecimal getBalance() { return amount.subtract(paid); }
+        public String getStatus() { return status(amount, paid, dueDate); }
     }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class Transaction {
-        /** The payment reference code, e.g. SNB-20260920-K7M2QX. */
+    public record UtilityRevision(int revision, Instant archivedAt, String dueDate, BigDecimal waterUsage,
+        BigDecimal waterRate, BigDecimal waterCharge, BigDecimal electricityUsage, BigDecimal electricityRate,
+        BigDecimal electricityCharge, BigDecimal parkingCharge, BigDecimal amount) {}
+    public record Allocation(String obligationId, String obligationType, String billingPeriod, BigDecimal amount) {}
+    @Data @NoArgsConstructor public static class Transaction {
         private String id;
+        private String tenantId;
+        private String idempotencyKey;
+        @JsonIgnore private String requestFingerprint;
         private String title;
         private String date;
-        private double amount;
-        /** Successful | Pending | Failed */
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal amount = BigDecimal.ZERO;
+        private String paymentType;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal rentAllocation;
+        @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128) private BigDecimal utilityAllocation;
+        private List<Allocation> allocations = new ArrayList<>();
+        private String relatedUtilityStatementId;
+        private String billingPeriod;
         private String status;
-        /** How it was paid, e.g. "GCash" or "BDO Online Banking". Null for older records. */
         private String paymentMode;
+        private String recordedBy;
+        private boolean simulated;
+        private Instant createdAt;
         private Instant paidAt;
-
-        public Transaction(String id, String title, String date, double amount, String status) {
-            this(id, title, date, amount, status, null, null);
-        }
+    }
+    @Data @NoArgsConstructor @AllArgsConstructor public static class PaymentMethod {
+        private String id; private String type; private String provider; private String accountName;
+        private String last4; private String expiry;
+        @JsonProperty("isPrimary") private boolean primary;
+    }
+    @Data @NoArgsConstructor @AllArgsConstructor public static class BreakdownLine { private String label; private double amount; }
+    @Data @NoArgsConstructor @AllArgsConstructor public static class UtilityBreakdown {
+        private String id; private String label; private Double value; private String unit;
+        private String deltaLabel; private String trend; private double usageVsLimit;
     }
 }

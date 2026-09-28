@@ -4,9 +4,10 @@ import Layout from '../components/Layout.jsx';
 import Card from '../components/Card.jsx';
 import Icon from '../components/Icon.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
-import { ProgressBar, LoadingState, ErrorState } from '../components/Common.jsx';
+import { LoadingState, ErrorState } from '../components/Common.jsx';
 import { useSession } from '../context/SessionContext.jsx';
 import { endpoints } from '../api/endpoints.js';
+import { useAutoRefresh } from '../utils/useAutoRefresh.js';
 import { formatRelativeTime, formatDate, formatPhp } from '../utils/format.js';
 
 function daysUntil(dateString) {
@@ -35,6 +36,7 @@ export default function Dashboard() {
   };
 
   useEffect(load, []);
+  useAutoRefresh(() => { endpoints.getDashboardSummary().then(setSummary).catch(() => {}); });
 
   // SessionContext re-reads the tenant record in the background; when it changes
   // (e.g. an admin marked rent as paid) refresh the summary too - quietly, without
@@ -53,7 +55,7 @@ export default function Dashboard() {
   const electricity = utilityUsage?.electricity;
   const water = utilityUsage?.water;
   const rentDays = daysUntil(dashboardTenant?.rentDueDate);
-  const balanceVisible = dashboardTenant?.currentBalance <= 0 || (rentDays !== null && rentDays <= 7);
+
   const maintenance = summary?.nextScheduledMaintenance;
   const neighborDelta = electricity?.deltaVsNeighbors;
 
@@ -75,7 +77,7 @@ export default function Dashboard() {
               </h1>
               <p className="mt-3 text-sm leading-relaxed text-white/70">
                 Everything you need for your home at {dashboardTenant?.building || 'your building'} is at
-                your fingertips. View your current balance, track maintenance requests, or explore
+                your fingertips. View your rent and utility balances, track maintenance requests, or explore
                 community updates.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
@@ -102,15 +104,14 @@ export default function Dashboard() {
                 <Icon name="card" size={18} />
               </div>
               <p className="text-xs font-medium uppercase tracking-wide text-ink-700/50">
-                Current Balance
+                Total Outstanding
               </p>
               <p className="mt-1 text-2xl font-bold text-ink-900">
-                {balanceVisible ? formatPhp(dashboardTenant?.currentBalance) : '—'}
+                {dashboardTenant?.totalOutstanding == null ? 'Review required' : formatPhp(dashboardTenant.totalOutstanding)}
               </p>
               <p className="mt-1 text-xs text-ink-700/50">
-                {dashboardTenant?.currentBalance <= 0
-                  ? 'No balance due'
-                  : `Due on ${formatDate(dashboardTenant.rentDueDate)}`}
+                Rent: {dashboardTenant?.rentBalance == null ? 'Review required' : formatPhp(dashboardTenant.rentBalance)}<br />
+                Utilities: {dashboardTenant?.utilityBalance == null ? 'Review required' : formatPhp(dashboardTenant.utilityBalance)}
               </p>
             </Card>
 
@@ -135,7 +136,7 @@ export default function Dashboard() {
                 Next Scheduled Maintenance
               </p>
               <p className="mt-1 text-lg font-bold text-ink-900">{maintenance?.label || 'None scheduled'}</p>
-              <p className="mt-1 text-xs text-ink-700/50">{maintenance?.date ? formatDate(maintenance.date) : 'No upcoming visit'}</p>
+              <p className="mt-1 text-xs text-ink-700/50">{maintenance?.date ? formatDate(`${maintenance.date}T00:00:00`) : 'No upcoming visit'}</p>
             </Card>
 
             <Card className="p-5">
@@ -196,10 +197,9 @@ export default function Dashboard() {
                         <Icon name="bolt" size={15} className="text-amber-500" /> Electricity
                       </span>
                       <span className="text-ink-700/60">
-                        {electricity ? `${electricity.used.toLocaleString()} ${electricity.unit} / ${electricity.limit.toLocaleString()} ${electricity.unit}` : 'No reading available'}
+                        {electricity ? `${electricity.used.toLocaleString()} ${electricity.unit}` : 'No reading available'}
                       </span>
                     </div>
-                    <ProgressBar value={electricity?.used || 0} max={electricity?.limit || 1} color="bg-amber-500" />
                   </div>
 
                   <div>
@@ -208,10 +208,9 @@ export default function Dashboard() {
                         <Icon name="droplet" size={15} className="text-sky-500" /> Water
                       </span>
                       <span className="text-ink-700/60">
-                        {water ? `${water.used.toLocaleString()} ${water.unit} / ${water.limit.toLocaleString()} ${water.unit}` : 'No reading available'}
+                        {water ? `${water.used.toLocaleString()} ${water.unit}` : 'No reading available'}
                       </span>
                     </div>
-                    <ProgressBar value={water?.used || 0} max={water?.limit || 1} color="bg-sky-500" />
                   </div>
 
                   <div className="flex items-start gap-3 rounded-lg bg-forest-50 p-4">

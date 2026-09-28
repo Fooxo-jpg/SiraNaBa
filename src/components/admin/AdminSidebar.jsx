@@ -8,7 +8,7 @@ import { endpoints } from '../../api/endpoints.js';
 const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', icon: 'grid', end: true },
   { to: '/admin/triage', label: 'Triage & Dispatch', icon: 'ticket' },
-  { to: '/admin/iot', label: 'IoT & Emergency', icon: 'wifi' },
+  { to: '/admin/iot', label: 'IoT & Emergency', icon: 'shield' },
   { to: '/admin/financial', label: 'Tenant & Financial', icon: 'card' },
   { to: '/admin/staff', label: 'Staff Management', icon: 'users' },
   { to: '/admin/config', label: 'Configuration', icon: 'settings' },
@@ -70,7 +70,7 @@ function SidebarContent({ onNavigate }) {
       <div>
         <div className="flex items-center gap-2 px-2 pb-8 pt-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-forest-500 text-white">
-            <Icon name="shield" size={16} />
+            <Icon name="homeCheck" size={16} />
           </div>
           <span className="text-base font-bold text-ink-900">SiraNaBa</span>
         </div>

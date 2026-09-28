@@ -44,7 +44,16 @@ public class Tenant {
 
     /** ISO date string, e.g. "2024-11-01" - matches the front end's formatDate helper. */
     private String rentDueDate;
-    private double currentBalance;
+    /** Legacy migration evidence, never an authoritative balance. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @org.springframework.data.mongodb.core.mapping.Field("currentBalance")
+    private Double legacyCurrentBalance;
+    @org.springframework.data.annotation.Transient private java.math.BigDecimal rentBalance;
+    @org.springframework.data.annotation.Transient private java.math.BigDecimal utilityBalance;
+    @org.springframework.data.annotation.Transient private java.math.BigDecimal totalOutstanding;
+    @org.springframework.data.annotation.Transient private java.math.BigDecimal rentPaid;
+    @org.springframework.data.annotation.Transient private String rentStatus;
+    @org.springframework.data.annotation.Transient private boolean billingReconciliationRequired;
     private boolean autoPayEnabled;
     private int daysUntilRentDue;
 

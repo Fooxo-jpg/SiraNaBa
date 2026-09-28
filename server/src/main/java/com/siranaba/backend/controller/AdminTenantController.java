@@ -42,10 +42,10 @@ public class AdminTenantController {
         return adminTenantService.updateProfile(tenantId, request);
     }
 
-    /** "Mark as Paid": clears the tenant's balance so their Billing page shows it too. */
+    /** Existing route retained, but requires an explicit amount, allocation type and retry key. */
     @PostMapping("/{tenantId}/mark-paid")
-    public AdminTenantResponse markPaid(@PathVariable String tenantId) {
-        return adminTenantService.markPaid(tenantId);
+    public com.siranaba.backend.dto.PaymentReceipt markPaid(@PathVariable String tenantId, @RequestBody com.siranaba.backend.dto.PayRequest request) {
+        return adminTenantService.markPaid(tenantId, request);
     }
 
     /** Creates this month's utility statement, or updates it when it already exists. */
@@ -57,6 +57,14 @@ public class AdminTenantController {
                 .body(response);
     }
 
+    @PostMapping("/{tenantId}/billing/reconcile")
+    public com.siranaba.backend.model.Billing reconcile(@PathVariable String tenantId, @RequestBody com.siranaba.backend.dto.ReconcileBillingRequest request) {
+        return adminTenantService.reconcile(tenantId, request);
+    }
+    @PostMapping("/{tenantId}/rent")
+    public com.siranaba.backend.model.Billing issueRent(@PathVariable String tenantId, @RequestBody AdminTenantService.IssueRentRequest request) {
+        return adminTenantService.issueRent(tenantId, request);
+    }
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public RegisterTenantResponse register(@Valid @RequestBody RegisterTenantRequest request) {

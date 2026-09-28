@@ -39,6 +39,10 @@ public class TicketTriageQueue {
 
     @Scheduled(fixedDelayString = "${app.gemini.triage-delay-ms:1500}", initialDelay = 500)
     public void processOldestWaitingTicket() {
+        DatabaseMaintenanceGate.runBackground(this::processOldestWaitingTicketLocked);
+    }
+
+    private void processOldestWaitingTicketLocked() {
         if (!processing.compareAndSet(false, true)) return;
         try {
             Ticket ticket = ticketRepository.findFirstByPriorityOrderBySubmittedAtAsc(QUEUED_PRIORITY).orElse(null);
@@ -80,6 +84,10 @@ public class TicketTriageQueue {
      */
     @Scheduled(fixedDelayString = "${app.ticket.dispatch-delay-ms:5000}", initialDelay = 1000)
     public void processUnassignedTickets() {
+        DatabaseMaintenanceGate.runBackground(this::processUnassignedTicketsLocked);
+    }
+
+    private void processUnassignedTicketsLocked() {
         if (!processing.compareAndSet(false, true)) return;
         try {
             for (Ticket ticket : ticketRepository.findAllByOrderBySubmittedAtAsc()) {
@@ -100,6 +108,7 @@ public class TicketTriageQueue {
 
     private boolean assign(Ticket ticket, ArrayList<TimelineEvent> timeline, Instant now) {
         return ticketDispatchService.assign(ticket).map(staff -> {
+            if (ticket.getAutoAssignedAt() == null) ticket.setAutoAssignedAt(now);
             ticket.setSpecialist(ticketDispatchService.specialistFor(staff, ticket.getEstimatedCompletion()));
             ticket.setAssignedStaffId(staff.getId());
             ticket.setStage("Assigned");

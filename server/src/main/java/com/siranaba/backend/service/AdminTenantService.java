@@ -1,251 +1,113 @@
 package com.siranaba.backend.service;
 
-import com.siranaba.backend.dto.AdminTenantResponse;
-import com.siranaba.backend.dto.PresentBillRequest;
-import com.siranaba.backend.dto.PresentBillResponse;
-import com.siranaba.backend.dto.UpdateTenantProfileRequest;
-import com.siranaba.backend.exception.ResourceNotFoundException;
-import com.siranaba.backend.model.Billing;
-import com.siranaba.backend.model.Cta;
-import com.siranaba.backend.model.NotificationDoc;
-import com.siranaba.backend.model.Tenant;
-import com.siranaba.backend.model.UtilityUsage;
-import com.siranaba.backend.repository.BillingRepository;
-import com.siranaba.backend.repository.NotificationRepository;
+import com.siranaba.backend.dto.*;
+import com.siranaba.backend.exception.*;
+import com.siranaba.backend.model.*;
 import com.siranaba.backend.repository.TenantRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import java.math.BigDecimal;
+import java.time.*;
+import java.util.*;
 
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.YearMonth;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-
-/**
- * Admin-side view of the tenants collection. It reads and writes the very same
- * Tenant documents the tenant portal uses, so whichever side edits a tenant,
- * the other side sees it on its next fetch.
- */
 @Service
 public class AdminTenantService {
-
-    private static final double PARKING_FEE = 1000.0;
-    /** Meralco's published residential reference rate for September 2026, in PHP/kWh. */
-    private static final double MERALCO_RESIDENTIAL_RATE = 14.7424;
-    private static final DateTimeFormatter BILLING_PERIOD_LABEL = DateTimeFormatter.ofPattern("MMMM uuuu", Locale.ENGLISH);
-
-    private final TenantRepository tenantRepository;
-    private final BillingRepository billingRepository;
-    private final NotificationRepository notificationRepository;
-    private final TenantProfileService profileService;
-    private final TenantCodeService codeService;
-
-    public AdminTenantService(TenantRepository tenantRepository, BillingRepository billingRepository,
-                              NotificationRepository notificationRepository,
-                              TenantProfileService profileService, TenantCodeService codeService) {
-        this.tenantRepository = tenantRepository;
-        this.billingRepository = billingRepository;
-        this.notificationRepository = notificationRepository;
-        this.profileService = profileService;
-        this.codeService = codeService;
+    // Existing configured reference rate, not a live utility-provider integration.
+    public static final BigDecimal ELECTRICITY_RATE = new BigDecimal("14.7424");
+    private final TenantRepository tenants;
+    private final BillingLedgerService ledger;
+    private final TenantProfileService profiles;
+    private final TenantCodeService codes;
+    public AdminTenantService(TenantRepository tenants, BillingLedgerService ledger, TenantProfileService profiles, TenantCodeService codes) {
+        this.tenants = tenants; this.ledger = ledger; this.profiles = profiles; this.codes = codes;
     }
-
     public List<AdminTenantResponse> list() {
-        codeService.assignMissingCodes();
-        return tenantRepository.findAll().stream()
-                .sorted(Comparator.comparingInt((Tenant t) -> TenantCodeService.number(t.getTenantCode())))
-                .map(AdminTenantService::toResponse)
-                .toList();
+        codes.assignMissingCodes();
+        return tenants.findAll().stream().sorted(Comparator.comparingInt(t -> TenantCodeService.number(t.getTenantCode())))
+                .map(this::toResponse).toList();
     }
-
-    /** Admin edits a tenant's name / email / phone - same rules as the tenant editing their own profile. */
-    public AdminTenantResponse updateProfile(String tenantId, UpdateTenantProfileRequest request) {
-        return toResponse(profileService.update(find(tenantId), request));
+    public AdminTenantResponse updateProfile(String tenantId, UpdateTenantProfileRequest req) {
+        return toResponse(profiles.update(find(tenantId), req));
     }
-
-    /**
-     * Clears the tenant's outstanding balance. The tenant's Billing page and
-     * dashboard both read that balance, so they show it as paid too; a
-     * transaction and a notification are added so they can see what happened.
-     */
-    public AdminTenantResponse markPaid(String tenantId) {
-        Tenant tenant = find(tenantId);
-        double amount = tenant.getCurrentBalance();
-        if (amount <= 0) {
-            return toResponse(tenant); // already settled; nothing to record
-        }
-
-        tenant.setCurrentBalance(0);
-        tenant = tenantRepository.save(tenant);
-
-        Billing billing = billingRepository.findByTenantId(tenantId).orElseGet(() -> Billing.empty(tenantId));
-        List<Billing.Transaction> transactions = new ArrayList<>(billing.getTransactions());
-        Instant paidAt = Instant.now();
-        transactions.add(0, new Billing.Transaction(
-                PaymentReferences.next(paidAt),
-                "Rent payment (recorded by management)",
-                LocalDate.now().toString(),
-                amount,
-                "Successful",
-                "Recorded by management",
-                paidAt));
-        billing.setTransactions(transactions);
-        billing.setTotalTransactionCount(billing.getTotalTransactionCount() + 1);
-        billing.setBreakdown(new ArrayList<>());
-        billingRepository.save(billing);
-
-        NotificationDoc note = new NotificationDoc();
-        note.setTenantId(tenantId);
-        note.setCategory("Payments");
-        note.setTitle("Payment received");
-        note.setBody(String.format(Locale.ENGLISH,
-                "Building management recorded your payment of PHP %,.2f. Your balance is now clear.", amount));
-        note.setTimestamp(Instant.now());
-        note.setCta(new Cta("View Billing", "/billing"));
-        notificationRepository.save(note);
-
-        return toResponse(tenant);
+    public PaymentReceipt markPaid(String tenantId, PayRequest req) {
+        if (!"MANUAL".equals(req.type()) || req.provider() == null || !Set.of("Cash", "GCash", "Maya", "Bank Transfer", "Card", "Other").contains(req.provider()))
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Select the actual method used for the received payment.");
+        return ledger.mutate(tenantId, b -> {
+            var transaction = BillingAccounting.pay(b, req, req.provider() + " (recorded by management)", false);
+            if (transaction.getRecordedBy() == null) transaction.setRecordedBy(SecurityContextHolder.getContext().getAuthentication().getName());
+            return PaymentReceipt.from(transaction);
+        });
     }
-
-    /**
-     * Publishes the current month's utility statement. Re-entering readings in
-     * the same calendar month updates that statement rather than creating
-     * another one. Utility charges are calculated from the readings and rates
-     * supplied by management; monthly rent is billed separately.
-     */
-    public PresentBillResponse presentBill(String tenantId, PresentBillRequest request) {
-        Tenant tenant = find(tenantId);
-        double waterCharge = request.waterUsage() * request.waterRate();
-        // Electricity is always billed at the configured Meralco residential rate;
-        // the client-provided rate is deliberately not trusted for billing.
-        double electricityCharge = request.electricityUsage() * MERALCO_RESIDENTIAL_RATE;
-        double parkingCharge = request.parkingFee() ? PARKING_FEE : 0;
-        double total = waterCharge + electricityCharge + parkingCharge;
-
-        Billing billing = billingRepository.findByTenantId(tenantId).orElseGet(() -> Billing.empty(tenantId));
-        YearMonth period = YearMonth.now();
-        String periodValue = period.toString();
-        boolean updatingExistingStatement = periodValue.equals(billing.getUtilityStatementPeriod());
-        if (updatingExistingStatement && statementMatches(billing, request)) {
-            return new PresentBillResponse(tenantId, waterCharge, electricityCharge, parkingCharge, total,
-                    tenant.getRentDueDate(), periodValue, false, true);
-        }
-        billing.setBreakdown(List.of(
-                new Billing.BreakdownLine("Water (" + request.waterUsage() + " m³ × PHP " + request.waterRate() + ")", waterCharge),
-                new Billing.BreakdownLine("Electricity (" + request.electricityUsage() + " kWh × PHP " + MERALCO_RESIDENTIAL_RATE + ")", electricityCharge),
-                new Billing.BreakdownLine("Parking fee", parkingCharge)
-        ).stream().filter(line -> line.getAmount() > 0).toList());
-        billing.setUtilityBreakdowns(List.of(
-                new Billing.UtilityBreakdown("water", "Water", request.waterUsage(), "m³", "PHP " + request.waterRate() + " / m³", "neutral", 0),
-                new Billing.UtilityBreakdown("electricity", "Electricity", request.electricityUsage(), "kWh", "PHP " + MERALCO_RESIDENTIAL_RATE + " / kWh", "neutral", 0)
-        ));
-        billing.setUtilityStatementPeriod(periodValue);
-        billingRepository.save(billing);
-
-        tenant.setCurrentBalance(total);
-        tenant.setUtilityUsage(updatedUtilityUsage(tenant.getUtilityUsage(), period,
-                request.waterUsage(), request.electricityUsage()));
-        tenantRepository.save(tenant);
-
-        NotificationDoc note = new NotificationDoc();
-        note.setTenantId(tenantId);
-        note.setCategory("Payments");
-        note.setTitle(updatingExistingStatement ? "Bill updated" : "New bill available");
-        note.setBody(String.format(Locale.ENGLISH,
-                updatingExistingStatement
-                        ? "Your %s utility statement was updated to PHP %,.2f."
-                        : "Your new %s utility statement of PHP %,.2f is available. Please review the rent and utility breakdown.",
-                period.format(BILLING_PERIOD_LABEL), total));
-        note.setTimestamp(Instant.now());
-        note.setCta(new Cta("View Billing", "/billing"));
-        notificationRepository.save(note);
-
-        return new PresentBillResponse(tenantId, waterCharge, electricityCharge, parkingCharge, total,
-                tenant.getRentDueDate(), periodValue, updatingExistingStatement, false);
+    public PresentBillResponse presentBill(String tenantId, PresentBillRequest req) {
+        return ledger.mutate(tenantId, b -> BillingAccounting.present(b, req, ELECTRICITY_RATE));
     }
-
-    /** True when re-submitted values would produce the exact current-period statement already on file. */
-    private static boolean statementMatches(Billing billing, PresentBillRequest request) {
-        Billing.UtilityBreakdown water = utility(billing, "water");
-        Billing.UtilityBreakdown electricity = utility(billing, "electricity");
-        if (water == null || electricity == null
-                || !sameNumber(water.getValue(), request.waterUsage())
-                || !sameNumber(electricity.getValue(), request.electricityUsage())
-                || !rateMatches(water.getDeltaLabel(), request.waterRate())
-                || !rateMatches(electricity.getDeltaLabel(), MERALCO_RESIDENTIAL_RATE)) {
-            return false;
-        }
-        boolean savedParking = billing.getBreakdown().stream()
-                .anyMatch(line -> "Parking fee".equals(line.getLabel()) && sameNumber(line.getAmount(), PARKING_FEE));
-        return savedParking == request.parkingFee();
+    public record IssueRentRequest(String billingPeriod, String dueDate) {}
+    public Billing issueRent(String tenantId, IssueRentRequest req) {
+        Tenant t = find(tenantId);
+        return ledger.mutate(tenantId, b -> {
+            BillingAccounting.ready(b);
+            String period = BillingAccounting.period(req.billingPeriod());
+            String due = BillingAccounting.date(req.dueDate());
+            if (b.getRentObligations().stream().anyMatch(r -> period.equals(r.getBillingPeriod())))
+                throw new ApiException(HttpStatus.CONFLICT, "Rent has already been issued for this period.");
+            var rent = BillingAccounting.rent(period, due, BigDecimal.valueOf(t.getMonthlyRent()), BigDecimal.ZERO);
+            b.getRentObligations().add(rent);
+            BillingAccounting.queueNotification(b, rent.getId(), "Rent charge issued",
+                "Your " + period + " rent charge of PHP " + rent.getAmount().toPlainString() + " is due " + due + ". Utilities are separate.");
+            return b;
+        });
     }
-
-    private static Billing.UtilityBreakdown utility(Billing billing, String id) {
-        return billing.getUtilityBreakdowns().stream().filter(item -> id.equals(item.getId())).findFirst().orElse(null);
+    public Billing reconcile(String tenantId, ReconcileBillingRequest req) {
+        return ledger.mutate(tenantId, b -> {
+            if (!b.isReconciliationRequired() || !Objects.equals(req.expectedVersion(), b.getVersion()))
+                throw new ApiException(HttpStatus.CONFLICT, "Billing changed or was already reconciled. Refresh and review it again.");
+            if (req.reason() == null || req.reason().trim().length() < 10 || req.reason().length() > 2000)
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Provide an audit note explaining the verified opening balances (10–2000 characters).");
+            if (req.rents() == null || req.utilities() == null)
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Explicit rent and utility opening lists are required (empty lists mean no obligations).");
+            if (!b.getRentObligations().isEmpty() || !b.getUtilityStatements().isEmpty())
+                throw new ApiException(HttpStatus.CONFLICT, "Existing Model B obligations require manual investigation, not replacement.");
+            Set<String> periods = new HashSet<>();
+            for (var r : req.rents()) {
+                var rent = BillingAccounting.rent(r.billingPeriod(), r.dueDate(), r.amount(), r.paid());
+                if (!periods.add(rent.getBillingPeriod())) throw new ApiException(HttpStatus.BAD_REQUEST, "Duplicate rent period.");
+                b.getRentObligations().add(rent);
+            }
+            periods.clear();
+            for (var u : req.utilities()) {
+                var statement = new Billing.UtilityStatement();
+                statement.setOpeningBalance(true);
+                statement.setId("UTIL-" + UUID.randomUUID()); statement.setBillingPeriod(BillingAccounting.period(u.billingPeriod()));
+                if (!periods.add(statement.getBillingPeriod())) throw new ApiException(HttpStatus.BAD_REQUEST, "Duplicate utility period.");
+                statement.setDueDate(BillingAccounting.date(u.dueDate()));
+                statement.setStatementDate(LocalDate.now(BillingAccounting.MANILA).toString()); statement.setCreatedAt(Instant.now());
+                statement.setWaterCharge(BillingAccounting.money(u.waterCharge()));
+                statement.setElectricityCharge(BillingAccounting.money(u.electricityCharge()));
+                statement.setParkingCharge(BillingAccounting.money(u.parkingCharge()));
+                statement.setAmount(BillingAccounting.money(statement.getWaterCharge().add(statement.getElectricityCharge()).add(statement.getParkingCharge())));
+                statement.setPaid(BillingAccounting.money(u.paid()));
+                if (statement.getPaid().compareTo(statement.getAmount()) > 0) throw new ApiException(HttpStatus.BAD_REQUEST, "Utility paid cannot exceed its charge.");
+                b.getUtilityStatements().add(statement);
+            }
+            b.setReconciliationRequired(false); b.setReconciliationNote(req.reason().trim()); b.setReconciledAt(Instant.now());
+            b.setReconciledBy(SecurityContextHolder.getContext().getAuthentication().getName());
+            BillingAccounting.queueNotification(b, "reconciliation-" + b.getId(), "Opening billing balances verified",
+                "Management verified your opening rent balance of PHP " + b.getRentBalance().toPlainString()
+                + " and utility balance of PHP " + b.getUtilityBalance().toPlainString() + ". Prior payment history is retained.");
+            return b;
+        });
     }
-
-    private static boolean rateMatches(String label, double rate) {
-        return label != null && label.equals("PHP " + rate + " / " + (label.endsWith("m³") ? "m³" : "kWh"));
-    }
-
-    private static boolean sameNumber(Double left, double right) {
-        return left != null && Math.abs(left - right) < 0.000001;
-    }
-
-    private static UtilityUsage updatedUtilityUsage(UtilityUsage current, YearMonth period,
-                                                      double waterUsage, double electricityUsage) {
-        UtilityUsage.UsageMetric priorWater = current == null ? null : current.getWater();
-        UtilityUsage.UsageMetric priorElectricity = current == null ? null : current.getElectricity();
-        return new UtilityUsage(
-                period.format(BILLING_PERIOD_LABEL),
-                new UtilityUsage.UsageMetric(electricityUsage, usageLimit(priorElectricity, electricityUsage), "kWh",
-                        priorElectricity == null ? null : priorElectricity.getDeltaVsNeighbors()),
-                new UtilityUsage.UsageMetric(waterUsage, usageLimit(priorWater, waterUsage), "m³", null)
-        );
-    }
-
-    private static double usageLimit(UtilityUsage.UsageMetric previous, double usage) {
-        return previous != null && previous.getLimit() > 0 ? previous.getLimit() : Math.max(usage, 1);
-    }
-
-    private Tenant find(String tenantId) {
-        return tenantRepository.findById(tenantId)
-                .orElseThrow(() -> new ResourceNotFoundException("Tenant not found."));
-    }
-
-    private static AdminTenantResponse toResponse(Tenant t) {
-        LocalDate today = LocalDate.now();
-        LocalDate due = parseDate(t.getRentDueDate());
-        LocalDate start = parseDate(t.getLeaseStart());
-
-        String payment = t.getCurrentBalance() <= 0
-                ? "Paid"
-                : (due != null && due.isBefore(today) ? "Overdue" : "Pending");
-        String occupancy = start != null && start.isAfter(today) ? "Scheduled" : "Active";
-        String account = "Overdue".equals(payment) ? "Delinquent" : "Good Standing";
-
-        String first = t.getFirstName() == null ? "" : t.getFirstName();
-        String last = t.getLastName() == null ? "" : t.getLastName();
-
-        return new AdminTenantResponse(
-                t.getId(), t.getTenantCode(), first, last, (first + " " + last).trim(),
-                t.getEmail(), t.getPhone(), t.getRoomId(), t.getTower(), t.getBuilding(), t.getUnit(),
-                t.getUnitType(), t.getLeaseStart(), t.getMonthlyRent(), t.getRentDueDate(),
-                t.getCurrentBalance(), occupancy, payment, account);
-    }
-
-    private static LocalDate parseDate(String iso) {
-        if (iso == null || iso.isBlank()) {
-            return null;
-        }
-        try {
-            return LocalDate.parse(iso);
-        } catch (DateTimeParseException ex) {
-            return null;
-        }
+    private Tenant find(String id) { return tenants.findById(id).orElseThrow(() -> new ResourceNotFoundException("Tenant not found.")); }
+    private AdminTenantResponse toResponse(Tenant t) {
+        Billing b = ledger.get(t.getId());
+        String payment = b.isReconciliationRequired() ? "Review Required" : b.getTotalOutstanding().signum() == 0 ? "Paid"
+            : "OVERDUE".equals(b.getRentStatus()) || b.getUtilityStatements().stream().anyMatch(u -> "OVERDUE".equals(u.getStatus())) ? "Overdue" : "Pending";
+        String first = Objects.toString(t.getFirstName(), ""), last = Objects.toString(t.getLastName(), "");
+        String occupancy = t.getLeaseStart() != null && LocalDate.parse(t.getLeaseStart()).isAfter(LocalDate.now(BillingAccounting.MANILA)) ? "Scheduled" : "Active";
+        return new AdminTenantResponse(t.getId(), t.getTenantCode(), first, last, (first + " " + last).trim(), t.getEmail(), t.getPhone(),
+            t.getRoomId(), t.getTower(), t.getBuilding(), t.getUnit(), t.getUnitType(), t.getLeaseStart(), t.getMonthlyRent(), b.getRentDueDate(),
+            b.getRentBalance(), b.getUtilityBalance(), b.getTotalOutstanding(), b.getRentPaid(), b.getRentStatus(), b.isReconciliationRequired(),
+            occupancy, payment, b.isReconciliationRequired() ? "Review Required" : "Overdue".equals(payment) ? "Delinquent" : "Good Standing");
     }
 }

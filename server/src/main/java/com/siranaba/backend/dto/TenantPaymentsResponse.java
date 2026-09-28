@@ -9,11 +9,13 @@ public record TenantPaymentsResponse(
         String tenantId,
         String tenantCode,
         String tenantName,
-        double totalPaid,
+        java.math.BigDecimal totalPaid,
         List<Billing.Transaction> transactions,
         List<Billing.PaymentMethod> paymentMethods,
         String utilityStatementPeriod,
         List<Billing.UtilityBreakdown> utilityBreakdowns,
-        List<Billing.BreakdownLine> breakdown
+        List<Billing.BreakdownLine> breakdown,
+        Billing billing,
+        java.math.BigDecimal electricityRate
 ) {
 }

@@ -1,10 +1,12 @@
 package com.siranaba.backend.controller;
 
 import com.siranaba.backend.dto.AssignTicketRequest;
+import com.siranaba.backend.dto.TicketReportDetailsRequest;
 import com.siranaba.backend.dto.UpdateDispatchStatusRequest;
 import com.siranaba.backend.model.Ticket;
 import com.siranaba.backend.service.AdminTicketDispatchService;
 import com.siranaba.backend.service.TicketService;
+import com.siranaba.backend.service.TicketReportService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,11 +22,20 @@ import java.util.List;
 @RequestMapping("/api/admin/tickets")
 public class AdminTicketController {
     private final TicketService ticketService;
+    private final TicketReportService ticketReportService;
     private final AdminTicketDispatchService adminTicketDispatchService;
 
-    public AdminTicketController(TicketService ticketService, AdminTicketDispatchService adminTicketDispatchService) {
+    public AdminTicketController(TicketService ticketService, AdminTicketDispatchService adminTicketDispatchService,
+                                 TicketReportService ticketReportService) {
         this.ticketService = ticketService;
+        this.ticketReportService = ticketReportService;
         this.adminTicketDispatchService = adminTicketDispatchService;
+    }
+
+    @PostMapping("/{ticketId}/report-details")
+    public Ticket updateReportDetails(@PathVariable String ticketId,
+            @Valid @RequestBody TicketReportDetailsRequest request) {
+        return ticketReportService.update(ticketId, request);
     }
 
     @GetMapping

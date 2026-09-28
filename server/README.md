@@ -1,5 +1,9 @@
 # SiraNaBa Backend (Java / Spring Boot)
 
+## Billing model
+
+Billing now follows **Model B: separate rent obligations, historical utility statements, and allocated payment history**. See [the implementation, migration, API, and test guide](../docs/MODEL_B_BILLING.md). Existing billing records require explicit administrator reconciliation before new charges/payments. Tenant checkout is simulated; there is no live payment-provider connection.
+
 A Spring Boot API that replaces `src/data/mockDb.js` and `src/data/mockServer.js`
 (now deleted from the front end) with a real MongoDB-backed service, and uses
 Google Gemini to triage new maintenance tickets (assessing severity, a safety
@@ -208,7 +212,7 @@ Both portals read and write it, so there's nothing to reconcile.
 |---|---|---|---|
 | GET | `/api/admin/tenants` | ADMIN | The Tenant Management table. `payment` (Paid/Pending/Overdue), `occupancy` and `account` are derived from balance, due date and lease start, never stored |
 | PATCH | `/api/admin/tenants/{id}` | ADMIN | Edit a tenant's name / email / phone |
-| POST | `/api/admin/tenants/{id}/mark-paid` | ADMIN | Clears the balance, adds a transaction to the tenant's billing history, sends them a notification |
+| POST | `/api/admin/tenants/{id}/mark-paid` | ADMIN | Records an explicit received payment with amount, payment type, method, and idempotency key; allocates it to the selected obligations |
 | PATCH | `/api/tenant` | TENANT | The tenant editing the same fields from Account Settings |
 
 ## Admin Configuration page: live MongoDB info
@@ -227,9 +231,9 @@ collection. The page re-checks every 30 seconds and has a Refresh button.
 
 Both PATCH routes go through `TenantProfileService`, so validation is identical: emails are unique
 across every login (the admin's included), and changing a tenant's email also changes the email they
-sign in with. The tenant's balance, due date and auto-pay flag live on the tenant record;
-`GET /api/billing` reads them from there, so the Billing page can't disagree with the dashboard or the
-admin table.
+sign in with. Rent and utility obligations, allocations, and payment history live in the versioned billing document.
+`GET /api/billing`, the dashboard, and the admin table derive their separate outstanding balances from that ledger.
+There is no implemented auto-pay or live payment gateway.
 
 Each tenant has a registry ID (`tenantCode`, e.g. `T-0007`) stored on the document. Tenants created
 before that field existed are given one automatically the first time the admin list is loaded.

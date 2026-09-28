@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Icon from '../Icon.jsx';
 import Modal from '../Modal.jsx';
 import StatusBadge from '../StatusBadge.jsx';
@@ -178,6 +178,7 @@ export function AddMethodModal({ open, onClose, onSaved, defaultName = '' }) {
         </>
       }
     >
+      <p className="mb-3 rounded-md bg-amber-50 p-3 text-xs text-amber-900">Demo methods only. Do not enter real card, bank, or wallet credentials.</p>
       <div role="tablist" className="mb-4 grid grid-cols-4 gap-1 rounded-lg bg-sand-100 p-1">
         {TABS.map((t) => (
           <button
@@ -399,181 +400,100 @@ export function ManageMethodsModal({ open, onClose, methods, onChanged, onAdd })
 
 /* ---------- Pay total (demo checkout) ---------- */
 
-const CHANNELS = [
-  { id: 'GCash', label: 'GCash', hint: 'Pay with your GCash wallet', type: 'EWALLET' },
-  { id: 'Maya', label: 'Maya', hint: 'Pay with your Maya wallet', type: 'EWALLET' },
-  { id: 'BANK', label: 'Online Banking', hint: 'BDO, BPI, RCBC and more', type: 'BANK' },
-  { id: 'CARD', label: 'Credit / Debit Card', hint: 'Visa, Mastercard and more', type: 'CARD' },
-];
-
-function Radio({ on }) {
-  return (
-    <span className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border-2 ${on ? 'border-forest-500' : 'border-black/20'}`}>
-      {on && <span className="h-2 w-2 rounded-full bg-forest-500" />}
-    </span>
-  );
-}
-
-export function PayModal({ open, onClose, amount, methods, onPaid }) {
-  const primary = methods.find((m) => m.isPrimary) || methods[0];
-  const [choice, setChoice] = useState(null); // { kind: 'saved', id } | { kind: 'channel', id }
-  const [bank, setBank] = useState(BANKS[0]);
+// A pending request survives modal close/reload so a lost response can be retried with the same key.
+export function PayModal({ open, onClose, billing, methods = [], onPaid, submitPayment = endpoints.pay, recorded = false }) {
+  const [paymentType, setPaymentType] = useState('COMBINED');
+  const [statementId, setStatementId] = useState('');
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState('GCash');
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState('');
-
-  // Start from the primary saved method (or GCash) each time the checkout opens.
+  const [pending, setPending] = useState(null);
+  const inFlight = useRef(false);
+  const storageKey = `siranaba.payment.${recorded ? 'admin' : 'tenant'}.${billing?.tenantId}`;
+  const unpaid = (billing?.utilityStatements || []).filter(s => Number(s.balance) > 0);
+  const utilityBalance = statementId ? Number(unpaid.find(s => s.id === statementId)?.balance || 0) : Number(billing?.utilityBalance || 0);
+  const applicable = paymentType === 'RENT' ? Number(billing?.rentBalance || 0) : paymentType === 'UTILITY' ? utilityBalance : Number(billing?.totalOutstanding || 0);
   useEffect(() => {
-    if (!open) return;
-    setChoice(primary ? { kind: 'saved', id: primary.id } : { kind: 'channel', id: 'GCash' });
-    setBank(BANKS[0]);
-    setError('');
-    setPaying(false);
+    if (!open || !billing) return;
+    let saved;
+    try { saved = JSON.parse(sessionStorage.getItem(storageKey)); } catch { /* storage may be unavailable */ }
+    setPending(saved || null); setError('');
+    setPaymentType(saved?.paymentType || 'COMBINED'); setStatementId(saved?.relatedUtilityStatementId || '');
+    setAmount(saved?.amount || String(billing.totalOutstanding ?? ''));
+    setMethod(recorded ? saved?.provider || 'Cash' : methods.find(m => m.isPrimary)?.id || 'GCash');
+    // Balances may refresh while typing; initialize only when the dialog opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
+  }, [open, storageKey]);
+  const chooseType = value => {
+    setPaymentType(value); setStatementId('');
+    setAmount(String(value === 'RENT' ? billing.rentBalance : value === 'UTILITY' ? billing.utilityBalance : billing.totalOutstanding));
+  };
   const pay = async () => {
+    if (inFlight.current) return;
     setError('');
-    setPaying(true);
+    if (!pending && (!Number.isFinite(Number(amount)) || Number(amount) <= 0 || Number(amount) > applicable)) {
+      setError('Enter an amount greater than zero and no higher than the selected outstanding balance.'); return;
+    }
+    let payload = pending;
+    if (!payload) {
+      const saved = methods.find(m => m.id === method);
+      const channel = recorded ? { type: 'MANUAL', provider: method } : saved ? { paymentMethodId: saved.id } : BANKS.includes(method)
+        ? { type: 'BANK', provider: method } : method === 'CARD' ? { type: 'CARD' } : { type: 'EWALLET', provider: method };
+      payload = { ...channel, paymentType, amount, idempotencyKey: crypto.randomUUID(),
+        relatedUtilityStatementId: paymentType === 'UTILITY' && statementId ? statementId : null };
+      try { sessionStorage.setItem(storageKey, JSON.stringify(payload)); }
+      catch { setError('Browser storage is unavailable. Enable session storage before making a payment so retries remain safe.'); return; }
+      setPending(payload);
+    }
+    inFlight.current = true; setPaying(true);
     try {
-      let payload;
-      if (choice.kind === 'saved') {
-        payload = { paymentMethodId: choice.id };
-      } else {
-        const ch = CHANNELS.find((c) => c.id === choice.id);
-        payload = { type: ch.type, provider: ch.type === 'BANK' ? bank : ch.type === 'EWALLET' ? ch.id : undefined };
-      }
-      // Small pause so the demo feels like a real gateway round trip.
-      const [receipt] = await Promise.all([endpoints.pay(payload), new Promise((r) => setTimeout(r, 900))]);
+      const receipt = await submitPayment(payload);
+      sessionStorage.removeItem(storageKey); setPending(null);
       onPaid(receipt);
     } catch (err) {
-      setError(err.message || 'Payment failed. Please try again.');
-      setPaying(false);
-    }
-  };
-
-  const option = (selected, onSelect, children, key) => (
-    <button
-      key={key}
-      type="button"
-      onClick={onSelect}
-      disabled={paying}
-      className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
-        selected ? 'border-forest-500 bg-forest-50' : 'border-black/10 hover:bg-sand-100'
-      }`}
-    >
-      <Radio on={selected} />
-      {children}
-    </button>
-  );
-
-  return (
-    <Modal
-      open={open}
-      onClose={() => !paying && onClose()}
-      title="Pay Total Now"
-      maxWidth="max-w-lg"
-      footer={
-        <>
-          <button
-            onClick={onClose}
-            disabled={paying}
-            className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={pay}
-            disabled={paying || !choice}
-            className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:opacity-60"
-          >
-            {paying ? 'Processing…' : `Pay ${formatPhp(amount)}`}
-          </button>
-        </>
+      if (err.status === 400 || err.status === 422) {
+        sessionStorage.removeItem(storageKey); setPending(null);
+        setError(err.message);
+      } else {
+        setError((err.message || 'The response was interrupted.') + ' Retry the same request below; its key prevents a second deduction.');
       }
-    >
-      <div className="mb-4 flex items-center justify-between rounded-lg bg-sand-100 px-4 py-3">
-        <span className="text-xs font-medium uppercase tracking-wide text-ink-700/50">Total amount due</span>
-        <span className="text-xl font-bold text-ink-900">{formatPhp(amount)}</span>
-      </div>
-
-      <div className="max-h-[46vh] space-y-4 overflow-y-auto thin-scrollbar pr-1">
-        {methods.length > 0 && (
-          <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">Saved methods</p>
-            <div className="space-y-2">
-              {methods.map((m) =>
-                option(
-                  choice?.kind === 'saved' && choice.id === m.id,
-                  () => setChoice({ kind: 'saved', id: m.id }),
-                  <>
-                    <MethodLogo method={m} size="h-8 w-8" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-ink-900">{methodTitle(m)}</span>
-                      <span className="block truncate text-xs text-ink-700/50">{methodSubtitle(m)}</span>
-                    </span>
-                    {m.isPrimary && <StatusBadge label="Primary" tone="success" />}
-                  </>,
-                  m.id
-                )
-              )}
-            </div>
-          </div>
-        )}
-
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">
-            {methods.length > 0 ? 'Or pay with' : 'Select payment method'}
-          </p>
-          <div className="space-y-2">
-            {CHANNELS.map((c) => {
-              const on = choice?.kind === 'channel' && choice.id === c.id;
-              return option(
-                on,
-                () => setChoice({ kind: 'channel', id: c.id }),
-                <>
-                  {c.id === 'BANK' ? (
-                    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-ink-900 text-white">
-                      <Icon name="dollar" size={15} />
-                    </span>
-                  ) : (
-                    <MethodLogo method={{ type: c.type, provider: c.id }} size="h-8 w-8" />
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-ink-900">{c.label}</span>
-                    {on && c.id === 'BANK' ? (
-                      <select
-                        value={bank}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => setBank(e.target.value)}
-                        aria-label="Choose bank"
-                        className="mt-1.5 w-full rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none focus:border-forest-400"
-                      >
-                        {BANKS.map((b) => (
-                          <option key={b}>{b}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="block text-xs text-ink-700/50">{c.hint}</span>
-                    )}
-                  </span>
-                </>,
-                c.id
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {error && (
-        <p role="alert" className="mt-3 rounded-md bg-status-highBg px-3 py-2 text-xs text-status-high">
-          {error}
-        </p>
-      )}
-      <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-700/40">
-        <Icon name="info" size={13} /> Demo checkout: no real money is moved.
-      </p>
-    </Modal>
-  );
+    } finally { inFlight.current = false; setPaying(false); }
+  };
+  return <Modal open={open} onClose={() => !paying && onClose()} title={recorded ? 'Record Received Payment' : 'Simulated Payment'} maxWidth="max-w-lg"
+    footer={<><button disabled={paying} onClick={onClose} className="rounded-md border px-3 py-2">Close</button>
+      <button disabled={paying || !billing || billing.reconciliationRequired || (!pending && applicable <= 0)} onClick={pay}
+        className="rounded-md bg-forest-500 px-4 py-2 font-semibold text-white disabled:opacity-50">
+        {paying ? 'Recording…' : pending ? 'Retry Same Payment' : recorded ? 'Record Payment' : 'Simulate Payment'}
+      </button></>}>
+    <div className="space-y-4">
+      <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">{recorded
+        ? 'Only record funds actually received by management. This action records a receipt; it does not collect money.'
+        : 'Demo / Simulated Payment. No real funds are transferred. Provider names identify the simulated method only.'}</p>
+      {pending && <p className="text-xs">Pending request: <span className="break-all font-mono">{pending.idempotencyKey}</span>. Details are locked until its outcome is confirmed.</p>}
+      <fieldset disabled={paying || !!pending} className="space-y-4 disabled:opacity-70">
+        <Field label="Payment For"><select className={inputCls} value={paymentType} onChange={e => chooseType(e.target.value)}>
+          <option value="RENT">Rent</option><option value="UTILITY">Utilities</option><option value="COMBINED">Both</option>
+        </select></Field>
+        {paymentType === 'UTILITY' && <Field label="Utility statement"><select className={inputCls} value={statementId} onChange={e => {
+          setStatementId(e.target.value); setAmount(String(e.target.value ? unpaid.find(s => s.id === e.target.value)?.balance : billing.utilityBalance));
+        }}><option value="">All unpaid statements (oldest due first)</option>{unpaid.map(s => <option key={s.id} value={s.id}>{s.billingPeriod} — {formatPhp(Number(s.balance))}</option>)}</select></Field>}
+        <p className="text-sm">Selected outstanding: <strong>{formatPhp(applicable)}</strong></p>
+        <Field label="Payment amount (PHP)"><input className={inputCls} type="number" min="0.01" step="0.01" max={applicable} value={amount} onChange={e => setAmount(e.target.value)} /></Field>
+        {recorded && <Field label="Actual received payment method"><select className={inputCls} value={method} onChange={e => setMethod(e.target.value)}>
+          {['Cash', 'GCash', 'Maya', 'Bank Transfer', 'Card', 'Other'].map(name => <option key={name}>{name}</option>)}
+        </select></Field>}
+        {!recorded && <Field label="Simulated payment method"><select className={inputCls} value={method} onChange={e => setMethod(e.target.value)}>
+          {methods.map(m => <option key={m.id} value={m.id}>{methodTitle(m)}</option>)}
+          {EWALLETS.map(name => <option key={name}>{name}</option>)}
+          {BANKS.map(name => <option key={name} value={name}>{name} Online Banking</option>)}
+          <option value="CARD">Credit / Debit Card</option>
+        </select></Field>}
+      </fieldset>
+      <p className="text-xs text-ink-700/60">Both: overdue rent first, then current rent, then unpaid utilities in due-date order. The server validates and records every allocation.</p>
+      {error && <p role="alert" className="rounded-md bg-status-highBg p-3 text-sm text-status-high">{error}</p>}
+    </div>
+  </Modal>;
 }
 
 /* ---------- Receipt ---------- */
@@ -597,11 +517,14 @@ export function ReceiptModal({ receipt, onClose }) {
     ['Payment Date', date],
     ['Payment Time', `${time} (PHT)`],
     ['Payment Mode', receipt.paymentMode],
+    ['Payment Type', receipt.paymentType || 'Legacy'],
+    ['Rent Allocation', formatPhp(Number(receipt.rentAllocation || 0))],
+    ['Utility Allocation', formatPhp(Number(receipt.utilityAllocation || 0))],
     ['Status', receipt.status],
   ];
 
   return (
-    <Modal open onClose={onClose} title="Payment Receipt" footer={
+    <Modal open onClose={onClose} title={receipt.simulated ? 'Simulated Payment Receipt' : 'Payment Receipt'} footer={
       <button onClick={onClose} className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600">
         Done
       </button>
@@ -610,8 +533,9 @@ export function ReceiptModal({ receipt, onClose }) {
         <span className={`mb-2 flex h-12 w-12 items-center justify-center rounded-full ${failed ? 'bg-status-highBg text-status-high' : 'bg-status-successBg text-status-success'}`}>
           <Icon name={failed ? 'alert' : 'check'} size={24} strokeWidth={2.4} />
         </span>
-        <p className="text-base font-semibold text-ink-900">{failed ? 'Payment Failed' : 'Payment Successful'}</p>
+        <p className="text-base font-semibold text-ink-900">{failed ? 'Payment Failed' : receipt.simulated ? 'Simulated Payment Recorded' : 'Payment Recorded'}</p>
         <p className="text-2xl font-bold text-ink-900">{formatPhp(receipt.amount)}</p>
+        {receipt.simulated && <p className="mt-2 text-sm text-amber-700">No real funds were transferred.</p>}
         {failed && <p className="mt-1 text-xs text-ink-700/60">No funds were collected. This attempt is recorded in the transaction log.</p>}
       </div>
 

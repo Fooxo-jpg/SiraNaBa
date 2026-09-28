@@ -12,12 +12,16 @@ public record AdminPaymentResponse(
         String unit,
         String building,
         String title,
-        double amount,
+        java.math.BigDecimal amount,
         String paymentMode,
         /** Exact payment time (null for very old records that only have a date). */
         Instant paidAt,
         /** yyyy-MM-dd */
         String date,
-        String status
+        String status,
+        String paymentType,
+        java.math.BigDecimal rentAllocation,
+        java.math.BigDecimal utilityAllocation,
+        boolean simulated
 ) {
 }

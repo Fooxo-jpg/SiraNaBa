@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import StatCard from '../../components/admin/StatCard.jsx';
+import MonthlyMaintenance from '../../components/admin/MonthlyMaintenance.jsx';
 import Card from '../../components/Card.jsx';
 import Icon from '../../components/Icon.jsx';
 import Modal from '../../components/Modal.jsx';
@@ -9,6 +10,8 @@ import { triageDispatch } from '../../data/adminMockDb.js';
 import { endpoints } from '../../api/endpoints.js';
 import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
 import { formatRelativeTime } from '../../utils/format.js';
+import { triageStats, isTicketAssigned, isTicketOpen } from '../../utils/triageStats.js';
+import { reportFloor, summarizeReports } from '../../utils/ticketReports.js';
 
 const CATEGORY_ICON = {
   Plumbing: 'droplet',
@@ -29,15 +32,40 @@ function formatTowerRoom(location) {
 }
 
 export default function TriageDispatch() {
-  const { stats, dispatchedCount, technicians, coordinator, hazardGuidelines } =
-    triageDispatch;
+  const { technicians } = triageDispatch;
   const [tickets, setTickets] = useState([]);
   const [ticketsError, setTicketsError] = useState('');
+  const [ticketsLoaded, setTicketsLoaded] = useState(false);
+  const [staff, setStaff] = useState(null);
+  const [staffError, setStaffError] = useState('');
+  const [tenants, setTenants] = useState([]);
+  const loadStaff = useCallback(async () => {
+    try {
+      setStaff(await endpoints.getStaff());
+      setStaffError('');
+    } catch (error) {
+      setStaff(null);
+      setStaffError(error.message || 'Could not load staff status.');
+    }
+  }, []);
+  useEffect(() => { loadStaff(); }, [loadStaff]);
+  useAutoRefresh(loadStaff);
+  const loadTenants = useCallback(async () => {
+    try {
+      setTenants(await endpoints.getAdminTenants());
+    } catch {
+      setTenants([]);
+    }
+  }, []);
+  useEffect(() => { loadTenants(); }, [loadTenants]);
+  useAutoRefresh(loadTenants);
   const loadTickets = useCallback(async () => {
     try {
       setTickets(await endpoints.getAdminTickets());
+      setTicketsLoaded(true);
       setTicketsError('');
     } catch (error) {
+      setTicketsLoaded(false);
       setTicketsError(error.message || "Couldn't load the dispatch queue.");
     }
   }, []);
@@ -45,11 +73,32 @@ export default function TriageDispatch() {
   // Polling keeps the Loading... label in sync when the server-side Gemini
   // worker completes, without clients calling Gemini themselves.
   useAutoRefresh(loadTickets);
-  const isAssigned = (ticket) => ticket.specialist?.name && ticket.specialist.name !== 'Unassigned';
-  const pendingTickets = tickets.filter((ticket) => !isAssigned(ticket) && !['Resolved', 'Cancelled'].includes(ticket.stage));
+  const counts = triageStats(tickets, staff || []);
+  const stats = [
+    { id: 'emergencies', label: 'Active Emergencies', value: ticketsLoaded ? String(counts.emergencies) : '—', delta: 'Open critical / severe tickets', tone: counts.emergencies ? 'danger' : 'neutral', icon: 'alert' },
+    { id: 'queue', label: 'Unassigned Queue', value: ticketsLoaded ? String(counts.unassigned) : '—', delta: 'Open tickets without assigned staff', icon: 'clock' },
+    { id: 'staff', label: 'Staff On-Site', value: staff ? String(counts.online) : '—', delta: staffError ? 'Staff status unavailable' : 'Staff with online status', icon: 'wrench' },
+    { id: 'completed', label: 'Completed Today', value: ticketsLoaded ? String(counts.completed) : '—', delta: 'Completed today · Philippine time', icon: 'check' },
+  ];
+  const isAssigned = isTicketAssigned;
+  const pendingTickets = tickets.filter((ticket) => !isAssigned(ticket) && isTicketOpen(ticket));
   const coordinationTickets = tickets.filter((ticket) => isAssigned(ticket) && ticket.dispatchStatus === 'Coordinating');
   const dispatchedTickets = tickets.filter((ticket) => ticket.dispatchStatus === 'Dispatched' || ticket.dispatchStatus === 'Escalated');
   const completedTickets = tickets.filter((ticket) => isAssigned(ticket) && ['Fixed Problem', 'Cancelled'].includes(ticket.dispatchStatus));
+  const recurringTickets = useMemo(() => {
+    const tenantByUnit = new Map(
+      tenants.map((tenant) => [`${Number(tenant.tower)}:${String(tenant.unit).trim().toLowerCase()}`, tenant])
+    );
+    return summarizeReports(tickets).groups
+      .filter((group) => group.exact && group.tickets.length > 1)
+      .map((group) => ({
+        ...group,
+        owner: tenantByUnit.get(`${Number(group.tower)}:${String(group.unit).trim().toLowerCase()}`)?.name || 'Owner not found',
+        latest: group.tickets.reduce((latest, ticket) =>
+          (Date.parse(ticket.submittedAt) || 0) > (Date.parse(latest?.submittedAt) || 0) ? ticket : latest, null),
+      }))
+      .slice(0, 5);
+  }, [tickets, tenants]);
   const TABS = [
     { id: 'pending', label: 'Pending Review', count: pendingTickets.length },
     { id: 'dispatched', label: 'Dispatched', count: dispatchedTickets.length },
@@ -72,7 +121,7 @@ export default function TriageDispatch() {
     setDispatchError('');
     try {
       const [allTickets, staff] = await Promise.all([endpoints.getAdminTickets(), endpoints.getStaff()]);
-      setUnassignedTickets(allTickets.filter((ticket) => !ticket.specialist || ticket.specialist.name === 'Unassigned'));
+      setUnassignedTickets(allTickets.filter((ticket) => !isAssigned(ticket) && isTicketOpen(ticket)));
       setDispatchStaff(staff);
     } catch (error) {
       setDispatchError(error.message || "Couldn't load the unassigned ticket queue.");
@@ -162,7 +211,7 @@ export default function TriageDispatch() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {stats.map((s) => (
-            <StatCard key={s.id} {...s} />
+            <StatCard key={s.id} {...s} delta={undefined} />
           ))}
         </div>
 
@@ -344,43 +393,40 @@ export default function TriageDispatch() {
           </Card>
 
           <div className="space-y-6">
-            <Card className="p-5 text-center">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-700/50">Coordinator Context</p>
-              <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-forest-100 text-forest-700">
-                <Icon name="eye" size={22} />
+            <Card className="p-5">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-700/50">Recurring Ticket Tracker</p>
+                  <p className="mt-1 text-xs text-ink-700/50">Units reporting the same issue more than once.</p>
+                </div>
+                <span className="rounded-full bg-forest-100 px-2 py-0.5 text-xs font-semibold text-forest-700">{recurringTickets.length}</span>
               </div>
-              <p className="text-sm font-semibold text-ink-900">{coordinator.name}</p>
-              <p className="mb-3 text-xs text-ink-700/50">{coordinator.title}</p>
-              <div className="flex gap-2">
-                <button className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-black/10 py-2 text-xs font-medium hover:bg-sand-100">
-                  <Icon name="mail" size={13} /> Message
-                </button>
-                <button className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-black/10 py-2 text-xs font-medium hover:bg-sand-100">
-                  <Icon name="phone" size={13} /> Call
-                </button>
-              </div>
+              {recurringTickets.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-black/10 px-3 py-6 text-center text-xs text-ink-700/50">No recurring unit tickets detected.</p>
+              ) : (
+                <ul className="max-h-80 space-y-2 overflow-y-auto pr-1 thin-scrollbar">
+                  {recurringTickets.map((item) => (
+                    <li key={item.key} className="rounded-lg border border-black/10 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-ink-900">{item.issue}</p>
+                          <p className="mt-0.5 text-xs font-medium text-forest-700">{item.owner}</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-status-highBg px-2 py-0.5 text-[10px] font-bold text-status-high">{item.tickets.length} reports</span>
+                      </div>
+                      <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                        <div><dt className="text-ink-700/40">Tower</dt><dd className="font-semibold text-ink-900">{item.tower}</dd></div>
+                        <div><dt className="text-ink-700/40">Floor</dt><dd className="font-semibold text-ink-900">{item.floor || reportFloor(item.latest) || '—'}</dd></div>
+                        <div><dt className="text-ink-700/40">Unit</dt><dd className="font-semibold text-ink-900">{item.unit}</dd></div>
+                      </dl>
+                      <p className="mt-2 text-[11px] text-ink-700/50">{item.active} active · Last reported {formatRelativeTime(item.latest?.submittedAt)}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Card>
 
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">Hazard Guidelines</p>
-              <div className="space-y-2">
-                {hazardGuidelines.map((g) => (
-                  <div
-                    key={g.level}
-                    className={`rounded-lg border-l-4 p-3 text-xs ${
-                      g.tone === 'danger'
-                        ? 'border-status-high bg-status-highBg'
-                        : 'border-status-progress bg-status-progressBg'
-                    }`}
-                  >
-                    <p className={`mb-0.5 font-bold uppercase ${g.tone === 'danger' ? 'text-status-high' : 'text-status-progress'}`}>
-                      {g.level}
-                    </p>
-                    <p className="text-ink-700/70">{g.text}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <MonthlyMaintenance />
           </div>
         </div>
       </div>

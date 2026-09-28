@@ -55,7 +55,12 @@ function toRegistryTenant(r) {
     occupancy: r.occupancy,
     leaseStart: r.leaseStart || '',
     rent: r.monthlyRent || 0,
-    balance: r.currentBalance || 0,
+    rentBalance: r.rentBalance,
+    utilityBalance: r.utilityBalance,
+    totalOutstanding: r.totalOutstanding,
+    rentPaid: r.rentPaid,
+    rentStatus: r.rentStatus,
+    reconciliationRequired: r.reconciliationRequired,
     payment: r.payment,
     dueDate: r.dueDate || '',
     account: r.account,
@@ -123,6 +128,11 @@ export function TenantRegistryProvider({ children }) {
       occupiedIds: new Set(byRoomId.keys()),
       reload,
       pushActivity,
+      clearAfterDatabaseCleanup: () => {
+        setTenants([]);
+        setActivity([]);
+        try { localStorage.removeItem(LEGACY_KEY); localStorage.removeItem(ACTIVITY_KEY); } catch { /* storage unavailable */ }
+      },
     };
   }, [tenants, activity, loading, syncError, reload, pushActivity]);
 

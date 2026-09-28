@@ -100,10 +100,9 @@ export const iotEmergency = {
   bannerText: '',
   alerts: [],
   telemetry: { sensorNetwork: PLACEHOLDER, powerStability: null, activeNodes: 0, latencyMs: null },
-  emergencyPersonnel: [],
   incidentCommand: [
-    { label: 'Fire Dispatch', number: PLACEHOLDER },
-    { label: 'Emergency Medical', number: PLACEHOLDER },
-    { label: 'Security HQ', number: PLACEHOLDER },
+    { label: 'Fire Dispatch', number: '0000-0000' },
+    { label: 'Emergency Medical', number: '0000-0000' },
+    { label: 'Security HQ', number: '0000-0000' },
   ],
 };

@@ -29,6 +29,10 @@ public class StaffWorkloadReconciliationService {
 
     @Scheduled(fixedDelayString = "${app.ticket.workload-reconciliation-delay-ms:5000}", initialDelay = 2000)
     public void reconcile() {
+        DatabaseMaintenanceGate.runBackground(this::reconcileLocked);
+    }
+
+    private void reconcileLocked() {
         var staffMembers = staffRepository.findAll();
         Map<String, String> staffIdsByName = new HashMap<>();
         for (Staff staff : staffMembers) {

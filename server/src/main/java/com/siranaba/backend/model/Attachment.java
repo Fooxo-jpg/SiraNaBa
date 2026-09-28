@@ -11,6 +11,7 @@ public class Attachment {
     private String id;
     private String label;
     private String previewUrl;
-    /** Base64 data URL retained so Gemini can inspect tenant-provided media. */
+    /** Legacy MongoDB data only. New uploads use GridFS; never accept or expose embedded bytes through JSON. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private String dataUrl;
 }

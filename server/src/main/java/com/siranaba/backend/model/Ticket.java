@@ -41,8 +41,13 @@ public class Ticket {
     /** Tenant unit snapshot captured when the ticket is created, for dispatch. */
     private int tower;
     private String unit;
+    @org.springframework.data.annotation.Transient
+    public String getFloorNumber() { return UnitFloor.fromUnit(unit); }
+    /** Admin-maintained issue label shared by repeat reports. Defaults to the submitted title. */
+    private String issueType;
 
     private Instant submittedAt;
+    private Instant autoAssignedAt;
     private Instant updatedAt;
     private String estimatedCompletion;
 

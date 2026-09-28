@@ -69,6 +69,7 @@ public class TicketService {
         ticket.setLocation(request.location());
         ticket.setTower(tenant.getTower());
         ticket.setUnit(tenant.getUnit());
+        ticket.setIssueType(request.title().trim());
         ticket.setStage("Submitted");
         ticket.setSubmittedAt(now);
         ticket.setUpdatedAt(now);

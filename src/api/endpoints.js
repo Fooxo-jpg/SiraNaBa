@@ -1,6 +1,9 @@
 import { api } from './client.js';
 
 export const endpoints = {
+  getMonthlyMaintenance: () => api.get('/api/admin/monthly-maintenance'),
+  updateMonthlyMaintenance: (date) => api.put('/api/admin/monthly-maintenance', { date }),
+  getCommandCenter: () => api.get('/api/admin/command-center'),
   getTenant: () => api.get('/api/tenant'),
   updateTenantProfile: (payload) => api.patch('/api/tenant', payload),
   getDashboardSummary: () => api.get('/api/dashboard/summary'),
@@ -10,6 +13,7 @@ export const endpoints = {
   getTicket: (id) => api.get(`/api/tickets/${id}`),
   createTicket: (payload) => api.post('/api/tickets', payload),
   updateTicket: (id, payload) => api.patch(`/api/tickets/${id}`, payload),
+  updateTicketReportDetails: (id, payload) => api.post(`/api/admin/tickets/${id}/report-details`, payload),
   getAdminTickets: () => api.get('/api/admin/tickets'),
   assignAdminTicket: (ticketId, staffId) => api.post(`/api/admin/tickets/${ticketId}/assign`, { staffId }),
   markAdminTicketArrived: (ticketId) => api.post(`/api/admin/tickets/${ticketId}/dispatch-status`, { status: 'Arrived' }),
@@ -19,7 +23,7 @@ export const endpoints = {
   addPaymentMethod: (payload) => api.post('/api/billing/payment-methods', payload),
   setPrimaryPaymentMethod: (id) => api.patch(`/api/billing/payment-methods/${id}/primary`),
   removePaymentMethod: (id) => api.delete(`/api/billing/payment-methods/${id}`),
-  // Demo checkout: pays the full balance and returns { referenceCode, paidAt, paymentMode, amount, status }.
+  // Explicitly simulated checkout; server validates the selected obligation and exact allocations.
   pay: (payload) => api.post('/api/billing/pay', payload),
 
   getNotifications: () => api.get('/api/notifications'),
@@ -35,7 +39,9 @@ export const endpoints = {
   // Issues a monthly statement with metered utilities. The tenant sees the same
   // balance and breakdown in Billing & Payments immediately after refresh.
   presentTenantBill: (tenantId, payload) => api.post(`/api/admin/tenants/${tenantId}/bills`, payload),
-  markTenantPaid: (tenantId) => api.post(`/api/admin/tenants/${tenantId}/mark-paid`),
+  markTenantPaid: (tenantId, payload) => api.post(`/api/admin/tenants/${tenantId}/mark-paid`, payload),
+  reconcileTenantBilling: (tenantId, payload) => api.post(`/api/admin/tenants/${tenantId}/billing/reconcile`, payload),
+  issueTenantRent: (tenantId, payload) => api.post(`/api/admin/tenants/${tenantId}/rent`, payload),
   // Admin: payments made in the tenant portal (reference code, mode, time) and saved payment methods.
   getAdminRecentPayments: (limit = 10) => api.get(`/api/admin/payments?limit=${limit}`),
   getAdminTenantPayments: (tenantId) => api.get(`/api/admin/payments/tenant/${tenantId}`),
@@ -43,6 +49,7 @@ export const endpoints = {
 
   // Admin > Configuration: live MongoDB connection, version, sizes and collections.
   getDatabaseStatus: () => api.get('/api/admin/system/database'),
+  cleanDatabase: (payload) => api.post('/api/admin/system/database/clean', payload),
   getSystemLogs: () => api.get('/api/admin/system/logs'),
 
   // Admin > Staff Management: the maintenance workforce roster.

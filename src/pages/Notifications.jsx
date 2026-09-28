@@ -7,6 +7,7 @@ import Modal from '../components/Modal.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { LoadingState, ErrorState, ToggleSwitch } from '../components/Common.jsx';
 import { endpoints } from '../api/endpoints.js';
+import { useAutoRefresh } from '../utils/useAutoRefresh.js';
 import { formatRelativeTime } from '../utils/format.js';
 import { NOTIFICATIONS_CHANGED } from '../components/Layout.jsx';
 
@@ -58,6 +59,7 @@ export default function Notifications() {
   };
 
   useEffect(load, []);
+  useAutoRefresh(() => { endpoints.getNotifications().then(setNotifications).catch(() => {}); });
 
   const counts = useMemo(
     () => ({

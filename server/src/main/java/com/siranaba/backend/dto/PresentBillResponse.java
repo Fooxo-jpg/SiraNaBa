@@ -1,15 +1,5 @@
 package com.siranaba.backend.dto;
-
-/** Confirmation returned after management creates or updates a tenant statement. */
-public record PresentBillResponse(
-        String tenantId,
-        double waterCharge,
-        double electricityCharge,
-        double parkingCharge,
-        double totalDue,
-        String dueDate,
-        String billingPeriod,
-        boolean updatedExistingStatement,
-        boolean unchanged
-) {
-}
+import java.math.BigDecimal;
+public record PresentBillResponse(String tenantId, BigDecimal waterCharge, BigDecimal electricityCharge,
+    BigDecimal parkingCharge, BigDecimal totalDue, String dueDate, String billingPeriod,
+    boolean updatedExistingStatement, boolean unchanged, String statementId, int revision) {}

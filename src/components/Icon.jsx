@@ -3,6 +3,7 @@ import React from 'react';
 // A small hand-picked icon set (stroke-based, 20x20) so the app has no
 // external icon dependency. Add more paths here as new screens need them.
 const paths = {
+  homeCheck: 'M3 10l9-7 9 7M5 9v11h14V9M8.5 14l2.5 2.5 4.5-4.5',
   grid: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
   wrench:
     'M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17l-1-1 5.3-5.3a4 4 0 0 1 5.4-5.4l-2.2 2.2 1 1 2.2-2.2z',

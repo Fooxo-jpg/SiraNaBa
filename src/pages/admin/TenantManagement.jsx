@@ -8,9 +8,9 @@ import Modal from '../../components/Modal.jsx';
 import StatusBadge from '../../components/StatusBadge.jsx';
 import { formatPhp, formatDate, formatRelativeTime, formatPaidAt } from '../../utils/format.js';
 import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
-import { tenantManagement } from '../../data/adminMockDb.js';
 import { endpoints } from '../../api/endpoints.js';
-import { MethodLogo, methodTitle, methodSubtitle } from '../../components/billing/PaymentParts.jsx';
+import AdminBillingPanel from '../../components/billing/AdminBillingPanel.jsx';
+import BillingDetails, { amountLabel } from '../../components/billing/BillingDetails.jsx';
 import { useTenantRegistry } from '../../context/TenantRegistryContext.jsx';
 import { TOWERS, UNIT_TYPES, RENT_BY_TYPE, ALL_ROOMS, levelByKey, roomById, vacantRooms } from '../../data/buildingData.js';
 
@@ -36,10 +36,6 @@ const EMPTY_FORM = () => ({
 const inputCls =
   'w-full rounded-md border border-black/10 bg-sand-50 px-3 py-2 text-sm outline-none focus:border-forest-400';
 
-// Meralco's published September 2026 residential reference rate. Update this
-// monthly when Meralco publishes the next residential rate.
-const MERALCO_RESIDENTIAL_RATE = '14.7424';
-const DEFAULT_USAGE = { waterUsage: '', waterRate: '60', electricityUsage: '', electricityRate: MERALCO_RESIDENTIAL_RATE, parkingFee: false };
 
 function initials(name) {
   return name
@@ -82,7 +78,6 @@ export default function TenantManagement() {
   const { tenants, activity, occupiedIds, loading, syncError, reload, pushActivity } = useTenantRegistry();
   const location = useLocation();
   const navigate = useNavigate();
-  const [tasks, setTasks] = useState({ invoices: false, ledger: false });
 
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('All Types');
@@ -106,10 +101,6 @@ export default function TenantManagement() {
 
   // Clicking a tenant opens their profile and a small billing workbench.
   const [billTarget, setBillTarget] = useState(null);
-  const [utilityForm, setUtilityForm] = useState(DEFAULT_USAGE);
-  const [billError, setBillError] = useState('');
-  const [presentingBill, setPresentingBill] = useState(false);
-  const [loadingUsage, setLoadingUsage] = useState(false);
 
   // Payments made by tenants (from the database, same records as the tenant's Billing page).
   const [payments, setPayments] = useState([]);
@@ -278,19 +269,7 @@ export default function TenantManagement() {
     });
   };
 
-  const markPaid = async (t) => {
-    setMenuId(null);
-    // Clears the balance in the database, so the tenant's Billing page shows it too.
-    try {
-      await endpoints.markTenantPaid(t.accountId);
-    } catch (err) {
-      setNotice({ tone: 'error', text: `Couldn't mark ${t.name} as paid: ${err.message}` });
-      return;
-    }
-    await reload();
-    loadPayments();
-    pushActivity({ icon: 'check', tone: 'success', title: 'Payment Received', detail: `${t.name} (Unit ${t.unit}) marked as paid.` });
-  };
+  const markPaid = (t) => { setMenuId(null); setBillTarget(t); };
 
   const removeTenant = async (t) => {
     setMenuId(null);
@@ -312,77 +291,7 @@ export default function TenantManagement() {
     setEditTarget(t);
   };
 
-  const openTenantProfile = async (t) => {
-    setMenuId(null);
-    setBillTarget(t);
-    setUtilityForm(DEFAULT_USAGE);
-    setBillError('');
-    setLoadingUsage(true);
-    try {
-      const billing = await endpoints.getAdminTenantPayments(t.accountId);
-      const water = billing.utilityBreakdowns?.find((item) => item.id === 'water');
-      const electricity = billing.utilityBreakdowns?.find((item) => item.id === 'electricity');
-      const rateFrom = (item, fallback) => {
-        const match = item?.deltaLabel?.match(/PHP\\s+([0-9.]+)/i);
-        return match ? match[1] : fallback;
-      };
-      if (water || electricity) {
-        setUtilityForm({
-          waterUsage: water?.value?.toString() ?? '',
-          waterRate: rateFrom(water, DEFAULT_USAGE.waterRate),
-          electricityUsage: electricity?.value?.toString() ?? '',
-          electricityRate: MERALCO_RESIDENTIAL_RATE,
-          parkingFee: billing.breakdown?.some((line) => line.label === 'Parking fee' && line.amount > 0) ?? false,
-        });
-      }
-    } catch (err) {
-      setBillError(err.message || "Couldn't load the saved utility usage.");
-    } finally {
-      setLoadingUsage(false);
-    }
-  };
-
-  const utilityTotals = useMemo(() => {
-    const water = Math.max(0, Number(utilityForm.waterUsage) || 0) * Math.max(0, Number(utilityForm.waterRate) || 0);
-    const electricity = Math.max(0, Number(utilityForm.electricityUsage) || 0) * Math.max(0, Number(utilityForm.electricityRate) || 0);
-    const parking = utilityForm.parkingFee ? 1000 : 0;
-    return { water, electricity, parking, total: water + electricity + parking };
-  }, [billTarget, utilityForm]);
-
-  const presentBill = async (e) => {
-    e.preventDefault();
-    if (!billTarget || presentingBill) return;
-    const values = ['waterUsage', 'waterRate', 'electricityUsage', 'electricityRate'];
-    if (values.some((key) => utilityForm[key] === '' || Number(utilityForm[key]) < 0 || !Number.isFinite(Number(utilityForm[key])))) {
-      setBillError('Enter zero or a positive number for each meter reading and rate.');
-      return;
-    }
-    setPresentingBill(true);
-    setBillError('');
-    try {
-      const receipt = await endpoints.presentTenantBill(billTarget.accountId, {
-        waterUsage: Number(utilityForm.waterUsage), waterRate: Number(utilityForm.waterRate),
-        electricityUsage: Number(utilityForm.electricityUsage), electricityRate: Number(utilityForm.electricityRate),
-        parkingFee: utilityForm.parkingFee,
-      });
-      await reload();
-      if (receipt.unchanged) {
-        setBillTarget(null);
-        setNotice({ tone: 'success', text: `No changes were made to ${billTarget.name}'s current billing-period statement.` });
-        return;
-      }
-      const action = receipt.updatedExistingStatement ? 'Bill Updated' : 'Bill Presented';
-      pushActivity({ icon: 'card', tone: 'success', title: action, detail: `${billTarget.name}'s ${receipt.billingPeriod} statement for ${formatPhp(receipt.totalDue)} was ${receipt.updatedExistingStatement ? 'updated' : 'issued'}.` });
-      setBillTarget(null);
-      setNotice({ tone: 'success', text: receipt.updatedExistingStatement
-        ? `${billTarget.name}'s current billing-period statement was updated to ${formatPhp(receipt.totalDue)}.`
-        : `Bill presented to ${billTarget.name} for ${formatPhp(receipt.totalDue)}. They can now review it in Billing & Payments.` });
-    } catch (err) {
-      setBillError(err.message || 'Could not present this bill. Please try again.');
-    } finally {
-      setPresentingBill(false);
-    }
-  };
+  const openTenantProfile = (t) => { setMenuId(null); setBillTarget(t); };
 
   const saveEdit = async (e) => {
     e.preventDefault();
@@ -602,7 +511,7 @@ export default function TenantManagement() {
                             </button>
                             {t.payment !== 'Paid' && (
                               <button onClick={() => markPaid(t)} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-sand-100">
-                                <Icon name="check" size={14} /> Mark as Paid
+                                <Icon name="check" size={14} /> Record Payment
                               </button>
                             )}
                             <button onClick={() => removeTenant(t)} className="flex w-full items-center gap-2 px-3 py-2 text-sm text-status-high hover:bg-status-highBg">
@@ -666,10 +575,10 @@ export default function TenantManagement() {
                     <tr key={p.referenceCode}>
                       <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink-900">{p.referenceCode}</td>
                       <td className="py-2.5 pr-3 leading-tight">
-                        <span className="block font-semibold text-ink-900">{p.tenantName}</span>
+                        <button onClick={() => openPayments({ accountId: p.tenantId, name: p.tenantName })} className="block font-semibold text-forest-700 hover:underline">{p.tenantName}</button>
                         <span className="text-[11px] text-ink-700/50">{p.tenantCode} · Unit {p.unit}</span>
                       </td>
-                      <td className="py-2.5 pr-3 text-ink-700/80">{p.paymentMode || '—'}</td>
+                      <td className="py-2.5 pr-3 text-ink-700/80">{p.paymentMode || '—'}<p className="text-xs">{p.paymentType || 'Legacy — allocation unknown'}{p.simulated ? ' · Simulated' : ''}</p><p className="text-xs">Rent: {p.rentAllocation == null ? 'Not recorded' : amountLabel(p.rentAllocation)} · Utilities: {p.utilityAllocation == null ? 'Not recorded' : amountLabel(p.utilityAllocation)}</p></td>
                       <td className="whitespace-nowrap py-2.5 pr-3 text-xs leading-tight text-ink-700/70">
                         <span className="block">{when.date}</span>
                         <span className="text-ink-700/50">{when.time}</span>
@@ -718,211 +627,22 @@ export default function TenantManagement() {
           </Card>
 
           <Card className="p-5">
-            <h2 className="mb-3 font-semibold text-ink-900">System Tasks</h2>
-            {tenantManagement.systemTasks.length === 0 && (
-              <p className="mb-4 text-xs text-ink-700/50">No scheduled tasks running.</p>
-            )}
-            {tenantManagement.systemTasks.map((task) => (
-              <div key={task.id} className="mb-4">
-                <div className="mb-1 flex items-center justify-between text-xs font-semibold uppercase text-ink-700/50">
-                  <span>{task.label}</span>
-                  <span className="text-forest-600">{Math.round(task.progress * 100)}%</span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-sand-100">
-                  <div className="h-full rounded-full bg-forest-500" style={{ width: `${task.progress * 100}%` }} />
-                </div>
-              </div>
-            ))}
-            <div className="space-y-2">
-              <button
-                onClick={() => setTasks((s) => ({ ...s, invoices: true }))}
-                disabled={tasks.invoices}
-                className="w-full rounded-md border border-black/10 py-2 text-sm font-medium hover:bg-sand-100 disabled:text-forest-600"
-              >
-                {tasks.invoices ? '✓ Invoices queued' : 'Generate Monthly Invoices'}
-              </button>
-              <button
-                onClick={() => setTasks((s) => ({ ...s, ledger: true }))}
-                disabled={tasks.ledger}
-                className="w-full rounded-md border border-black/10 py-2 text-sm font-medium hover:bg-sand-100 disabled:text-forest-600"
-              >
-                {tasks.ledger ? '✓ Ledger synced' : 'Sync Ledger to Cloud'}
-              </button>
-            </div>
+            <h2 className="mb-3 font-semibold text-ink-900">Billing Actions</h2>
+            <p className="text-sm text-ink-700/60">Open a tenant's profile to issue rent, present a utility statement, record a received payment, or review payment history.</p>
+            <p className="mt-3 text-xs text-ink-700/60">Charges and payment allocations are saved to the database. Monthly rent issuance is currently manual.</p>
           </Card>
         </div>
       </div>
 
-      <Modal
-        open={!!billTarget}
-        onClose={() => setBillTarget(null)}
-        title="Tenant profile & billing"
-        maxWidth="max-w-2xl"
-        footer={
-          <>
-            <button onClick={() => setBillTarget(null)} className="rounded-md px-4 py-2 text-sm font-medium hover:bg-sand-100">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              form="present-tenant-bill"
-              disabled={presentingBill}
-              className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:opacity-60"
-            >
-              {presentingBill ? 'Saving…' : 'Save Utility Usage'}
-            </button>
-          </>
-        }
-      >
-        {billTarget && (
-          <form id="present-tenant-bill" onSubmit={presentBill} className="space-y-5">
-            <section className="rounded-lg border border-black/5 bg-sand-50 p-4">
-              <div className="mb-3 flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-forest-100 text-xs font-bold text-forest-700">
-                  {initials(billTarget.name)}
-                </span>
-                <div>
-                  <p className="font-semibold text-ink-900">{billTarget.name}</p>
-                  <p className="text-xs text-ink-700/60">{billTarget.id} · Tower {billTarget.tower}, Unit {billTarget.unit}</p>
-                </div>
-              </div>
-              <dl className="grid grid-cols-1 gap-x-5 gap-y-2 text-xs sm:grid-cols-2">
-                <div><dt className="text-ink-700/50">Email</dt><dd className="font-medium text-ink-900">{billTarget.email || '—'}</dd></div>
-                <div><dt className="text-ink-700/50">Phone</dt><dd className="font-medium text-ink-900">{billTarget.phone || '—'}</dd></div>
-                <div><dt className="text-ink-700/50">Unit type</dt><dd className="font-medium text-ink-900">{billTarget.type || '—'}</dd></div>
-                <div><dt className="text-ink-700/50">Lease start</dt><dd className="font-medium text-ink-900">{billTarget.leaseStart ? formatDate(billTarget.leaseStart + 'T00:00:00') : '—'}</dd></div>
-              </dl>
-            </section>
-
-            <section>
-              <div className="mb-3">
-                <h3 className="font-semibold text-ink-900">Add Utility Usage</h3>
-                <p className="text-xs text-ink-700/60">
-                  {loadingUsage ? 'Loading saved utility usage…' : 'Previously saved usage is shown below. Saving again this billing period updates the existing statement.'}
-                </p>
-              </div>
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                <div className="space-y-3 rounded-lg border border-black/5 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-700/50">Usage</p>
-                  <Field label="Water (m³)">
-                    <input type="number" min="0" step="0.01" value={utilityForm.waterUsage} onChange={(e) => setUtilityForm({ ...utilityForm, waterUsage: e.target.value })} className={inputCls} placeholder="0.00" />
-                  </Field>
-                  <Field label="Electricity (kWh)">
-                    <input type="number" min="0" step="0.01" value={utilityForm.electricityUsage} onChange={(e) => setUtilityForm({ ...utilityForm, electricityUsage: e.target.value })} className={inputCls} placeholder="0.00" />
-                  </Field>
-                </div>
-                <div className="space-y-3 rounded-lg border border-black/5 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-700/50">Rates</p>
-                  <Field label="Water (PHP / m³)">
-                    <input type="number" min="0" step="0.01" value={utilityForm.waterRate} onChange={(e) => setUtilityForm({ ...utilityForm, waterRate: e.target.value })} className={inputCls} />
-                  </Field>
-                  <Field label="Electricity (PHP / kWh)" hint="Meralco residential reference rate — September 2026">
-                    <input type="number" value={MERALCO_RESIDENTIAL_RATE} readOnly className={`${inputCls} cursor-not-allowed text-ink-700/60`} />
-                  </Field>
-                </div>
-                <div className="space-y-3 rounded-lg bg-sand-50 p-3 text-sm">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-700/50">Breakdown</p>
-                  <div className="flex items-center justify-between"><span className="text-ink-700/60">Water</span><span className="font-semibold">{formatPhp(utilityTotals.water)}</span></div>
-                  <div className="flex items-center justify-between"><span className="text-ink-700/60">Electricity</span><span className="font-semibold">{formatPhp(utilityTotals.electricity)}</span></div>
-                  <div className="flex items-center justify-between"><span className="text-ink-700/60">Parking</span><span className="font-semibold">{formatPhp(utilityTotals.parking)}</span></div>
-                  <div className="flex items-center justify-between border-t border-black/10 pt-2"><span className="font-semibold text-ink-900">Utility total</span><span className="font-bold text-forest-700">{formatPhp(utilityTotals.total)}</span></div>
-                </div>
-              </div>
-            </section>
-
-            <label className="flex cursor-pointer items-center justify-between rounded-lg border border-black/10 p-3">
-              <span><span className="block font-semibold text-ink-900">Parking Fee</span><span className="text-xs text-ink-700/60">Add fixed PHP 1,000.00 / month</span></span>
-              <input type="checkbox" checked={utilityForm.parkingFee} onChange={(e) => setUtilityForm({ ...utilityForm, parkingFee: e.target.checked })} className="h-4 w-4 accent-forest-600" />
-            </label>
-
-            <div className="flex items-center justify-between rounded-lg bg-forest-700 px-4 py-3 text-white">
-              <span className="text-sm font-medium">Current period total</span>
-              <span className="text-xl font-bold">{formatPhp(utilityTotals.total)}</span>
-            </div>
-            {billError && <p role="alert" className="rounded-md bg-status-highBg px-3 py-2 text-xs text-status-high">{billError}</p>}
-          </form>
-        )}
+      <Modal open={!!billTarget} onClose={() => setBillTarget(null)} title="Tenant profile & billing" maxWidth="max-w-4xl"
+        footer={<button onClick={() => setBillTarget(null)} className="rounded-md border px-4 py-2">Close</button>}>
+        {billTarget && <AdminBillingPanel key={billTarget.accountId} tenant={billTarget} onChanged={() => { reload(); loadPayments(); }} />}
       </Modal>
-
-      <Modal
-        open={!!payTarget}
-        onClose={() => setPayTarget(null)}
-        title={`Payments: ${payTarget?.name || ''}`}
-        maxWidth="max-w-2xl"
-        footer={
-          <button onClick={() => setPayTarget(null)} className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600">
-            Close
-          </button>
-        }
-      >
-        {payDetailError && <p role="alert" className="text-xs text-status-high">{payDetailError}</p>}
-        {!payDetail && !payDetailError && <p className="py-6 text-center text-sm text-ink-700/50">Loading…</p>}
-        {payDetail && (
-          <div className="space-y-5">
-            <div className="flex items-center justify-between rounded-lg bg-sand-100 px-4 py-3">
-              <span className="text-xs font-medium uppercase tracking-wide text-ink-700/50">Total paid</span>
-              <span className="text-lg font-bold text-ink-900">{formatPhp(payDetail.totalPaid)}</span>
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">Payment history</p>
-              {payDetail.transactions.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-black/10 bg-sand-50 p-4 text-center text-sm text-ink-700/50">No payments yet.</p>
-              ) : (
-                <div className="overflow-x-auto thin-scrollbar">
-                  <table className="w-full min-w-[520px] text-sm">
-                    <thead>
-                      <tr className="text-left text-xs font-semibold uppercase tracking-wide text-ink-700/40">
-                        <th className="pb-2 pr-3">Reference</th>
-                        <th className="pb-2 pr-3">Mode</th>
-                        <th className="pb-2 pr-3">Date &amp; Time (PHT)</th>
-                        <th className="pb-2 pr-3 text-right">Amount</th>
-                        <th className="pb-2">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5">
-                      {payDetail.transactions.map((tx) => {
-                        const when = formatPaidAt(tx.paidAt, tx.date);
-                        return (
-                          <tr key={tx.id}>
-                            <td className="py-2 pr-3 font-mono text-xs font-semibold">{tx.id}</td>
-                            <td className="py-2 pr-3">{tx.paymentMode || '—'}</td>
-                            <td className="whitespace-nowrap py-2 pr-3 text-xs leading-tight text-ink-700/70">
-                              {when.date}<br />{when.time}
-                            </td>
-                            <td className="py-2 pr-3 text-right font-semibold">{formatPhp(tx.amount)}</td>
-                            <td className="py-2"><StatusBadge label={tx.status} /></td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/50">Saved payment methods</p>
-              {payDetail.paymentMethods.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-black/10 bg-sand-50 p-4 text-center text-sm text-ink-700/50">None saved.</p>
-              ) : (
-                <div className="space-y-2">
-                  {payDetail.paymentMethods.map((m) => (
-                    <div key={m.id} className="flex items-center gap-3 rounded-lg border border-black/5 p-3">
-                      <MethodLogo method={m} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-ink-900">{methodTitle(m)}</p>
-                        <p className="truncate text-xs text-ink-700/50">{methodSubtitle(m)}</p>
-                      </div>
-                      {m.isPrimary && <StatusBadge label="Primary" tone="success" />}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <p className="mt-2 text-[11px] text-ink-700/40">Only the last 4 digits are on file. Full card numbers and CVVs are never stored.</p>
-            </div>
-          </div>
-        )}
+      <Modal open={!!payTarget} onClose={() => setPayTarget(null)} title={`Payments: ${payTarget?.name || ''}`} maxWidth="max-w-4xl"
+        footer={<button onClick={() => setPayTarget(null)} className="rounded-md border px-4 py-2">Close</button>}>
+        {payDetailError && <p role="alert">{payDetailError}</p>}
+        {!payDetail && !payDetailError && <p>Loading…</p>}
+        {payDetail?.billing && <div className="pb-5"><BillingDetails billing={payDetail.billing} monthlyRent={payTarget?.rent} /></div>}
       </Modal>
 
       <Modal

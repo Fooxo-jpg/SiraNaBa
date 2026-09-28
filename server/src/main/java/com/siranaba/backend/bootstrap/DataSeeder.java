@@ -59,28 +59,14 @@ public class DataSeeder implements CommandLineRunner {
         if (!appProperties.getSeed().isEnabled()) {
             return;
         }
+        // An empty database with retained admins is an intentional clean state.
+        // Do not seed demo records or alter existing admin credentials after cleanup.
+        if (tenantRepository.count() == 0 && userRepository.existsByRole("ADMIN")) return;
         if (tenantRepository.count() == 0) {
             seedDemoTenant();
         }
         ensureAdminAndTenantLogins();
-        clearMockBilling();
-    }
 
-    /**
-     * One-time cleanup: databases seeded by an earlier version hold the fake
-     * demo billing record (TXN-1001 / TXN-1002, Visa 4242, $2,450 due).
-     * Reset any such record to an empty one. Real billing data is untouched.
-     */
-    private void clearMockBilling() {
-        for (Billing billing : billingRepository.findAll()) {
-            boolean isMock = billing.getTransactions().stream()
-                    .anyMatch(t -> "TXN-1001".equals(t.getId()));
-            if (isMock) {
-                billingRepository.delete(billing);
-                billingRepository.save(Billing.empty(billing.getTenantId()));
-                log.info("Cleared demo billing data for tenant {}.", billing.getTenantId());
-            }
-        }
     }
 
     /**
@@ -130,8 +116,8 @@ public class DataSeeder implements CommandLineRunner {
         tenant.setUnit("402");
         tenant.setBuilding("Building A");
         tenant.setRentDueDate("2024-11-01");
-        tenant.setCurrentBalance(2450.0);
-        tenant.setAutoPayEnabled(true);
+
+        tenant.setAutoPayEnabled(false);
         tenant.setDaysUntilRentDue(12);
         tenant.setUtilityUsage(new UtilityUsage(
                 "Current billing cycle",
@@ -145,7 +131,6 @@ public class DataSeeder implements CommandLineRunner {
         ));
         Instant now = Instant.now();
         tenant.setRecentActivity(List.of(
-                new ActivityItem("act_1", "Rent Payment Processed", now.minus(18, ChronoUnit.DAYS), "Successful"),
                 new ActivityItem("act_2", "System Security Update", now.minus(2, ChronoUnit.DAYS), "Applied")
         ));
         tenant.setNextScheduledMaintenance(new ScheduledMaintenance("Quarterly HVAC Check", "2024-10-28"));
@@ -157,7 +142,7 @@ public class DataSeeder implements CommandLineRunner {
         tenant = tenantRepository.save(tenant);
 
         // Billing starts empty - no fake balance, card or transactions.
-        billingRepository.save(Billing.empty(tenant.getId()));
+        billingRepository.save(com.siranaba.backend.service.BillingLedgerService.initial(tenant));
 
         NotificationDoc n1 = new NotificationDoc();
         n1.setTenantId(tenant.getId());
@@ -168,16 +153,6 @@ public class DataSeeder implements CommandLineRunner {
         n1.setCta(new Cta("Go to Maintenance", "/maintenance"));
         n1.setRead(false);
         notificationRepository.save(n1);
-
-        NotificationDoc n2 = new NotificationDoc();
-        n2.setTenantId(tenant.getId());
-        n2.setCategory("Payments");
-        n2.setTitle("Rent payment processed");
-        n2.setBody("Your October rent payment of $2,100.00 was processed successfully.");
-        n2.setTimestamp(now.minus(18, ChronoUnit.DAYS));
-        n2.setCta(new Cta("View Billing", "/billing"));
-        n2.setRead(true);
-        notificationRepository.save(n2);
 
         log.info("Demo tenant seeded.");
     }

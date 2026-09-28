@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
-/** Payment reference codes, e.g. SNB-20260920-K7M2QX (date is Philippine time). */
+/** Payment reference codes, e.g. SNB-20260920-K7M2QX8D6R9N3W5A (date is Philippine time). */
 public final class PaymentReferences {
 
     private static final ZoneId MANILA = ZoneId.of("Asia/Manila");
@@ -18,7 +18,7 @@ public final class PaymentReferences {
 
     public static String next(Instant at) {
         StringBuilder sb = new StringBuilder("SNB-").append(DAY.format(at.atZone(MANILA))).append('-');
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 16; i++) {
             sb.append(CHARS.charAt(RANDOM.nextInt(CHARS.length())));
         }
         return sb.toString();

@@ -34,7 +34,7 @@ function DesktopItem({ to, label, icon, end, badge, collapsed }) {
       title={collapsed ? label : undefined}
       aria-label={collapsed ? label : undefined}
       className={({ isActive }) =>
-        `relative flex items-center rounded-xl text-[13px] font-medium transition-colors ${
+        `relative flex flex-shrink-0 items-center rounded-xl text-[13px] font-medium transition-colors ${
           collapsed ? 'h-11 w-11 justify-center self-center' : 'gap-3.5 px-4 py-3'
         } ${isActive ? 'bg-ink-900 text-white' : 'text-ink-700/60 hover:bg-black/5 hover:text-ink-900'}`
       }
@@ -52,18 +52,18 @@ function DesktopSidebar({ brand, items, collapsed, onToggle }) {
 
   return (
     <aside
-      className={`hidden flex-shrink-0 p-3 pr-0 transition-[width] duration-200 lg:block ${
+      className={`hidden h-full min-h-0 flex-shrink-0 p-3 pr-0 transition-[width] duration-200 lg:block ${
         collapsed ? 'w-[92px]' : 'w-64'
       }`}
     >
-      <div className="flex h-full flex-col rounded-3xl bg-white p-3 shadow-card">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl bg-white p-3 shadow-card">
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={!collapsed}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className={`mb-8 mt-2 flex items-center rounded-xl text-left transition-colors hover:bg-sand-100 ${
+          className={`mb-8 mt-2 flex flex-shrink-0 items-center rounded-xl text-left transition-colors hover:bg-sand-100 ${
             collapsed ? 'h-11 w-11 justify-center self-center' : 'gap-2.5 px-3 py-2'
           }`}
         >
@@ -73,13 +73,13 @@ function DesktopSidebar({ brand, items, collapsed, onToggle }) {
           {!collapsed && <span className="text-base font-bold text-ink-900">SiraNaBa</span>}
         </button>
 
-        <nav className="flex flex-col gap-1.5" aria-label="Main">
+        <nav className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain thin-scrollbar" aria-label="Main">
           {items.map((item) => (
             <DesktopItem key={item.to} {...item} collapsed={collapsed} />
           ))}
         </nav>
 
-        <div className="mt-auto pt-4">
+        <div className="mt-auto flex-shrink-0 pt-4">
           <button
             type="button"
             onClick={signOut}
@@ -133,7 +133,7 @@ function MobileBottomNav({ items }) {
 
 // Desktop: floating rounded sidebar (click the logo to collapse to icons).
 // Mobile: floating dark pill bottom navigation.
-export default function SideNav({ items, brandIcon = 'grid' }) {
+export default function SideNav({ items, brandIcon = 'homeCheck' }) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
 
   useEffect(() => {

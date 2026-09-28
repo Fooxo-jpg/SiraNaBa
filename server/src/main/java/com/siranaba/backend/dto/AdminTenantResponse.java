@@ -23,7 +23,12 @@ public record AdminTenantResponse(
         String leaseStart,
         double monthlyRent,
         String dueDate,
-        double currentBalance,
+        java.math.BigDecimal rentBalance,
+        java.math.BigDecimal utilityBalance,
+        java.math.BigDecimal totalOutstanding,
+        java.math.BigDecimal rentPaid,
+        String rentStatus,
+        boolean reconciliationRequired,
         /** Active | Scheduled */
         String occupancy,
         /** Paid | Pending | Overdue */
