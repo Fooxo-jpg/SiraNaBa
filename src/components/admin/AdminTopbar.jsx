@@ -1,6 +1,8 @@
 import React from 'react';
 import Icon from '../Icon.jsx';
-import { adminUser } from '../../data/adminMockDb.js';
+
+// TODO: replace with the signed-in admin from SessionContext.
+const adminUser = { name: 'Administrator', role: '—' };
 
 export default function AdminTopbar({ crumb, onOpenMenu, unreadCount = 0 }) {
   return (

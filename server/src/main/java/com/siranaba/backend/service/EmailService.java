@@ -2,6 +2,7 @@ package com.siranaba.backend.service;
 
 import com.siranaba.backend.config.AppProperties;
 import com.siranaba.backend.model.Tenant;
+import com.siranaba.backend.model.Billing;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -56,7 +57,7 @@ public class EmailService {
                 Welcome to SiraNaBa! Your tenant account is ready.
 
                 Your unit
-                  Tower %d, Unit %s (%s)
+                  Main Building, Unit %s (%s)
                   Lease starts: %s
                   Monthly rent: PHP %s
 
@@ -72,7 +73,7 @@ public class EmailService {
                 - SiraNaBa Facility Management
                 """.formatted(
                 tenant.getFirstName().isBlank() ? tenant.getLastName() : tenant.getFirstName(),
-                tenant.getTower(), tenant.getUnit(), tenant.getUnitType(),
+                tenant.getUnit(), tenant.getUnitType(),
                 leaseStart,
                 String.format(Locale.ENGLISH, "%,.2f", tenant.getMonthlyRent()),
                 appProperties.getPortalUrl(),
@@ -86,6 +87,43 @@ public class EmailService {
             // Never log the message body: it contains the password.
             log.error("Failed to send welcome email to {}: {}", tenant.getEmail(), ex.getMessage());
             return new SendResult(false, "The account was created but the email could not be sent. Check the server's mail settings.");
+        }
+    }
+
+    public SendResult sendRentInvoice(Tenant tenant, Billing.RentObligation rent, int noticeDays) {
+        JavaMailSender sender = mailSender.getIfAvailable();
+        if (sender == null || mailHost == null || mailHost.isBlank()) {
+            log.warn("Mail is not configured; rent invoice to {} will be retried.", tenant.getEmail());
+            return new SendResult(false, "Email is not configured on the server.");
+        }
+        String due = LocalDate.parse(rent.getDueDate()).format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.ENGLISH));
+        SimpleMailMessage msg = new SimpleMailMessage();
+        msg.setFrom(appProperties.getMail().getFrom());
+        msg.setTo(tenant.getEmail());
+        msg.setSubject("SiraNaBa rent invoice - due " + due);
+        msg.setText("""
+                Hello %s,
+
+                Your rent invoice is ready.
+
+                Billing period: %s
+                Amount due: PHP %s
+                Due date: %s
+
+                View your invoice and payment options: %s/billing
+
+                This notice was sent %d days before the due date.
+
+                - SiraNaBa Facility Management
+                """.formatted(tenant.getFirstName().isBlank() ? tenant.getLastName() : tenant.getFirstName(),
+                rent.getBillingPeriod(), String.format(Locale.ENGLISH, "%,.2f", rent.getBalance()), due,
+                appProperties.getPortalUrl().replaceAll("/$", ""), noticeDays));
+        try {
+            sender.send(msg);
+            return new SendResult(true, "Rent invoice emailed to " + tenant.getEmail() + ".");
+        } catch (Exception ex) {
+            log.error("Failed to send rent invoice to {}: {}", tenant.getEmail(), ex.getMessage());
+            return new SendResult(false, "The rent invoice email could not be sent and will be retried.");
         }
     }
 }

@@ -1,7 +1,9 @@
 import React from 'react';
 import AppShell from '../AppShell.jsx';
 import PageHeader from '../nav/PageHeader.jsx';
-import { adminUser } from '../../data/adminMockDb.js';
+
+// TODO: replace with the signed-in admin from SessionContext.
+const adminUser = { name: 'Administrator', role: '—' };
 
 const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', icon: 'grid', end: true },

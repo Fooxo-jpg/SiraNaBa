@@ -4,7 +4,6 @@ import Card from '../../components/Card.jsx';
 import Icon from '../../components/Icon.jsx';
 import Modal from '../../components/Modal.jsx';
 import BuildingMap from '../../components/admin/BuildingMap.jsx';
-import { iotEmergency } from '../../data/adminMockDb.js';
 
 const TABS = ['Feed', 'Map View', 'History'];
 
@@ -16,7 +15,15 @@ const OVERRIDES = [
 ];
 
 export default function IoTEmergency() {
-  const { activeCriticalAlerts, bannerText, alerts, telemetry, incidentCommand } = iotEmergency;
+  const activeCriticalAlerts = 0;
+  const bannerText = '';
+  const alerts = [];
+  const telemetry = { sensorNetwork: '—', powerStability: null, activeNodes: 0, latencyMs: null };
+  const incidentCommand = [
+    { label: 'Fire Dispatch', number: '0000-0000' },
+    { label: 'Emergency Medical', number: '0000-0000' },
+    { label: 'Security HQ', number: '0000-0000' },
+  ];
   const [tab, setTab] = useState('Feed');
   const [dismissed, setDismissed] = useState(false);
   const [confirmOverride, setConfirmOverride] = useState(null);

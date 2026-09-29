@@ -11,7 +11,6 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.Locale;
 
 @Service
 public class TicketReportService {
@@ -24,17 +23,18 @@ public class TicketReportService {
     }
 
     public Ticket update(String id, TicketReportDetailsRequest request) {
+        BuildingCatalog.Room room = BuildingCatalog.requireUnit(request.unit());
         // Update only report fields so a concurrent triage or dispatch change is preserved.
         Update update = new Update()
                 .set("issueType", request.issueType().trim())
-                .set("tower", request.tower())
-                .set("unit", request.unit().trim().toUpperCase(Locale.ROOT))
+                .set("tower", BuildingCatalog.BUILDING_ID)
+                .set("unit", room.unit())
                 .set("updatedAt", Instant.now());
         Ticket saved = mongo.findAndModify(Query.query(Criteria.where("_id").is(id)), update,
                 FindAndModifyOptions.options().returnNew(true), Ticket.class);
         if (saved == null) throw new ResourceNotFoundException("Ticket not found.");
         auditLog.update("TICKET", id + " report details updated: " + saved.getIssueType()
-                + "; Tower " + saved.getTower() + ", Floor " + saved.getFloorNumber() + ", Unit " + saved.getUnit()
+                + "; Main Building, Floor " + saved.getFloorNumber() + ", Unit " + saved.getUnit()
                 );
         return saved;
     }

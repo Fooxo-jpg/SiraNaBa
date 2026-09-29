@@ -4,7 +4,6 @@ import Card from '../../components/Card.jsx';
 import Modal from '../../components/Modal.jsx';
 import { useTenantRegistry } from '../../context/TenantRegistryContext.jsx';
 import Icon from '../../components/Icon.jsx';
-import { configuration } from '../../data/adminMockDb.js';
 import { endpoints } from '../../api/endpoints.js';
 import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
 import { formatBytes, formatDuration, formatRelativeTime } from '../../utils/format.js';
@@ -116,7 +115,14 @@ function DatabasePanel({ db, error, refreshing, onRefresh }) {
 }
 
 export default function Configuration() {
-  const { systemStatus, version, sessionRemaining } = configuration;
+  const P = '—';
+  const systemStatus = [
+    { id: 'broker', label: 'Event Broker', status: P, icon: 'bolt', metrics: [{ label: 'Queue Depth:', value: P }, { label: 'Throughput:', value: P }] },
+    { id: 'db', label: 'MongoDB Store', status: P, icon: 'database', metrics: [{ label: 'Storage Used:', value: P }, { label: 'Uptime:', value: P }] },
+    { id: 'dispatch', label: 'Dispatch Cluster', status: P, icon: 'trend', metrics: [{ label: 'Nodes Online:', value: P }, { label: 'Failover:', value: P }] },
+  ];
+  const version = P;
+  const sessionRemaining = P;
   const [tab, setTab] = useState('logs');
   const [query, setQuery] = useState('');
   const { clearAfterDatabaseCleanup } = useTenantRegistry();

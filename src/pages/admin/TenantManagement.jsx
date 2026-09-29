@@ -9,6 +9,7 @@ import StatusBadge from '../../components/StatusBadge.jsx';
 import { formatPhp, formatDate, formatRelativeTime, formatPaidAt } from '../../utils/format.js';
 import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
 import { endpoints } from '../../api/endpoints.js';
+import AuditExportModal from '../../components/admin/AuditExportModal.jsx';
 import AdminBillingPanel from '../../components/billing/AdminBillingPanel.jsx';
 import BillingDetails, { amountLabel } from '../../components/billing/BillingDetails.jsx';
 import { useTenantRegistry } from '../../context/TenantRegistryContext.jsx';
@@ -46,9 +47,9 @@ function initials(name) {
 }
 
 function exportCsv(rows) {
-  const header = ['ID', 'Name', 'Tower', 'Unit', 'Unit Type', 'Email', 'Phone', 'Occupancy', 'Lease Start', 'Monthly Rent (PHP)', 'Payment', 'Due Date', 'Account'];
+  const header = ['ID', 'Name', 'Building', 'Unit', 'Unit Type', 'Email', 'Phone', 'Occupancy', 'Lease Start', 'Monthly Rent (PHP)', 'Payment', 'Due Date', 'Account'];
   const lines = rows.map((t) =>
-    [t.id, t.name, `Tower ${t.tower}`, t.unit, t.type, t.email, t.phone, t.occupancy, t.leaseStart, t.rent, t.payment, t.dueDate, t.account]
+    [t.id, t.name, 'Main Building', t.unit, t.type, t.email, t.phone, t.occupancy, t.leaseStart, t.rent, t.payment, t.dueDate, t.account]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
       .join(',')
   );
@@ -105,14 +106,24 @@ export default function TenantManagement() {
   // Payments made by tenants (from the database, same records as the tenant's Billing page).
   const [payments, setPayments] = useState([]);
   const [paymentsError, setPaymentsError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
   const loadPayments = useCallback(async () => {
     try {
-      setPayments(await endpoints.getAdminRecentPayments(10));
+      setPayments(await endpoints.getAdminRecentPayments(3));
       setPaymentsError('');
     } catch (err) {
       setPaymentsError(err.message || "Couldn't load payments.");
     }
   }, []);
+  const refreshPayments = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([loadPayments(), reload()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadPayments, reload]);
   useEffect(() => {
     loadPayments();
   }, [loadPayments]);
@@ -260,7 +271,7 @@ export default function TenantManagement() {
       icon: 'plus',
       tone: 'success',
       title: 'New Lease Registered',
-      detail: `${tenant.name} (Tower ${tenant.tower}, Unit ${tenant.unit}) successfully onboarded. Lease starts ${formatDate(tenant.leaseStart + 'T00:00:00')}.`,
+      detail: `${tenant.name} (Main Building, Unit ${tenant.unit}) successfully onboarded. Lease starts ${formatDate(tenant.leaseStart + 'T00:00:00')}.`,
     });
     setModalOpen(false);
     setNotice({
@@ -281,7 +292,7 @@ export default function TenantManagement() {
       return;
     }
     await reload();
-    pushActivity({ icon: 'trash', tone: 'progress', title: 'Tenant Removed', detail: `${t.name} left ${t.tower ? `Tower ${t.tower}` : t.building || 'the building'}, Unit ${t.unit}. The unit is vacant again.` });
+    pushActivity({ icon: 'trash', tone: 'progress', title: 'Tenant Removed', detail: `${t.name} left Main Building, Unit ${t.unit}. The unit is vacant again.` });
   };
 
   const openEdit = (t) => {
@@ -467,7 +478,7 @@ export default function TenantManagement() {
                       </span>
                     </td>
                     <td className="py-3 pr-3">
-                      <span className="block font-mono text-xs text-ink-900">{t.tower ? `T${t.tower}` : t.building || '—'} · {t.unit}</span>
+                      <span className="block font-mono text-xs text-ink-900">Main Building · {t.unit}</span>
                       <span className="text-[11px] text-ink-700/50">{t.type || '—'}</span>
                     </td>
                     <td className="py-3 pr-3 text-xs leading-relaxed text-ink-700/70">
@@ -545,66 +556,18 @@ export default function TenantManagement() {
           </div>
         </Card>
 
-        <Card className="p-5">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="font-semibold text-ink-900">Recent Payments</h2>
-              <p className="text-xs text-ink-700/50">Live from the database: payments made by tenants in their portal, plus ones you record.</p>
-            </div>
-            <button onClick={loadPayments} className="flex items-center gap-1 text-xs font-semibold uppercase text-forest-600 hover:underline">
-              <Icon name="refresh" size={12} /> Refresh
-            </button>
-          </div>
-          {paymentsError && <p role="alert" className="mb-2 text-xs text-status-high">{paymentsError}</p>}
-          <div className="overflow-x-auto thin-scrollbar">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="text-left text-xs font-semibold uppercase tracking-wide text-ink-700/40">
-                  <th className="pb-2 pr-3">Reference Code</th>
-                  <th className="pb-2 pr-3">Tenant</th>
-                  <th className="pb-2 pr-3">Payment Mode</th>
-                  <th className="pb-2 pr-3">Date &amp; Time (PHT)</th>
-                  <th className="pb-2 pr-3 text-right">Amount</th>
-                  <th className="pb-2">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/5">
-                {payments.map((p) => {
-                  const when = formatPaidAt(p.paidAt, p.date);
-                  return (
-                    <tr key={p.referenceCode}>
-                      <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink-900">{p.referenceCode}</td>
-                      <td className="py-2.5 pr-3 leading-tight">
-                        <button onClick={() => openPayments({ accountId: p.tenantId, name: p.tenantName })} className="block font-semibold text-forest-700 hover:underline">{p.tenantName}</button>
-                        <span className="text-[11px] text-ink-700/50">{p.tenantCode} · Unit {p.unit}</span>
-                      </td>
-                      <td className="py-2.5 pr-3 text-ink-700/80">{p.paymentMode || '—'}<p className="text-xs">{p.paymentType || 'Legacy — allocation unknown'}{p.simulated ? ' · Simulated' : ''}</p><p className="text-xs">Rent: {p.rentAllocation == null ? 'Not recorded' : amountLabel(p.rentAllocation)} · Utilities: {p.utilityAllocation == null ? 'Not recorded' : amountLabel(p.utilityAllocation)}</p></td>
-                      <td className="whitespace-nowrap py-2.5 pr-3 text-xs leading-tight text-ink-700/70">
-                        <span className="block">{when.date}</span>
-                        <span className="text-ink-700/50">{when.time}</span>
-                      </td>
-                      <td className="py-2.5 pr-3 text-right font-semibold text-ink-900">{formatPhp(p.amount)}</td>
-                      <td className="py-2.5"><StatusBadge label={p.status} /></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {payments.length === 0 && !paymentsError && (
-              <p className="py-6 text-center text-sm text-ink-700/50">No payments recorded yet.</p>
-            )}
-          </div>
-        </Card>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <Card className="p-5 lg:col-span-2">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+          <Card className="flex flex-col p-5 lg:col-span-2">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="font-semibold text-ink-900">Recent Account Activity</h2>
-                <p className="text-xs text-ink-700/50">Automated financial assessments and record updates.</p>
               </div>
-              <button className="text-xs font-semibold uppercase text-forest-600 hover:underline">Full Audit Trail</button>
+              <button onClick={() => setAuditOpen(true)} className="flex items-center gap-1 text-xs font-semibold uppercase text-forest-600 hover:underline">
+                <Icon name="download" size={12} /> Full Audit Trail
+              </button>
             </div>
+            <div className="relative min-h-[240px] flex-1">
+            <div className="absolute inset-0 overflow-y-auto thin-scrollbar">
             {activity.length === 0 && (
               <p className="py-8 text-center text-sm text-ink-700/50">No account activity yet.</p>
             )}
@@ -624,15 +587,63 @@ export default function TenantManagement() {
                 </li>
               ))}
             </ul>
+            </div>
+            </div>
           </Card>
 
-          <Card className="p-5">
-            <h2 className="mb-3 font-semibold text-ink-900">Billing Actions</h2>
-            <p className="text-sm text-ink-700/60">Open a tenant's profile to issue rent, present a utility statement, record a received payment, or review payment history.</p>
-            <p className="mt-3 text-xs text-ink-700/60">Charges and payment allocations are saved to the database. Monthly rent issuance is currently manual.</p>
+          <Card className="p-5 lg:col-span-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="font-semibold text-ink-900">Recent Payments</h2>
+              </div>
+              <button onClick={refreshPayments} disabled={refreshing} className="flex items-center gap-1 text-xs font-semibold uppercase text-forest-600 hover:underline disabled:opacity-60">
+                <span className={refreshing ? 'inline-flex animate-spin' : 'inline-flex'}><Icon name="refresh" size={12} /></span> {refreshing ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+            {paymentsError && <p role="alert" className="mb-2 text-xs text-status-high">{paymentsError}</p>}
+            <div className="overflow-x-auto thin-scrollbar">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr className="text-left text-xs font-semibold uppercase tracking-wide text-ink-700/40">
+                    <th className="pb-2 pr-3">Reference Code</th>
+                    <th className="pb-2 pr-3">Tenant</th>
+                    <th className="pb-2 pr-3">Payment Mode</th>
+                    <th className="pb-2 pr-3">Date &amp; Time (PHT)</th>
+                    <th className="pb-2 pr-3 text-right">Amount</th>
+                    <th className="pb-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/5">
+                  {payments.map((p) => {
+                    const when = formatPaidAt(p.paidAt, p.date);
+                    return (
+                      <tr key={p.referenceCode}>
+                        <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink-900">{p.referenceCode}</td>
+                        <td className="py-2.5 pr-3 leading-tight">
+                          <button onClick={() => openPayments({ accountId: p.tenantId, name: p.tenantName })} className="block font-semibold text-forest-700 hover:underline">{p.tenantName}</button>
+                          <span className="text-[11px] text-ink-700/50">{p.tenantCode} · Unit {p.unit}</span>
+                        </td>
+                        <td className="py-2.5 pr-3 text-ink-700/80">{p.paymentMode || '—'}<p className="text-xs">{p.paymentType || 'Legacy — allocation unknown'}{p.simulated ? ' · Simulated' : ''}</p><p className="text-xs">Rent: {p.rentAllocation == null ? 'Not recorded' : amountLabel(p.rentAllocation)} · Utilities: {p.utilityAllocation == null ? 'Not recorded' : amountLabel(p.utilityAllocation)}</p></td>
+                        <td className="whitespace-nowrap py-2.5 pr-3 text-xs leading-tight text-ink-700/70">
+                          <span className="block">{when.date}</span>
+                          <span className="text-ink-700/50">{when.time}</span>
+                        </td>
+                        <td className="py-2.5 pr-3 text-right font-semibold text-ink-900">{formatPhp(p.amount)}</td>
+                        <td className="py-2.5"><StatusBadge label={p.status} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {payments.length === 0 && !paymentsError && (
+                <p className="py-6 text-center text-sm text-ink-700/50">No payments recorded yet.</p>
+              )}
+            </div>
           </Card>
         </div>
       </div>
+
+      <AuditExportModal open={auditOpen} onClose={() => setAuditOpen(false)} />
 
       <Modal open={!!billTarget} onClose={() => setBillTarget(null)} title="Tenant profile & billing" maxWidth="max-w-4xl"
         footer={<button onClick={() => setBillTarget(null)} className="rounded-md border px-4 py-2">Close</button>}>
@@ -666,7 +677,7 @@ export default function TenantManagement() {
         }
       >
         <p className="-mt-2 mb-4 text-xs text-ink-700/60">
-          {editTarget?.id} · {editTarget?.tower ? `Tower ${editTarget.tower}` : editTarget?.building}, Unit {editTarget?.unit}. These are the same details the tenant
+          {editTarget?.id} · Main Building, Unit {editTarget?.unit}. These are the same details the tenant
           sees in their Account Settings; changing the email also changes the address they sign in with.
         </p>
         <form id="edit-tenant" onSubmit={saveEdit} noValidate className="space-y-3">

@@ -20,7 +20,22 @@ async function request(path, options = {}) {
   return res.status === 204 ? null : res.json();
 }
 
+// Fetches a binary file (Excel / CSV / PDF). Resolves to { blob, filename }.
+async function download(path) {
+  const res = await fetch(`${BASE_URL}${path}`, { credentials: 'include' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err = new Error(body.message || `Download failed: ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  return { blob: await res.blob(), filename: match ? decodeURIComponent(match[1]) : null };
+}
+
 export const api = {
+  download,
   get: (path) => request(path),
   post: (path, data) => request(path, { method: 'POST', body: JSON.stringify(data) }),
   put: (path, data) => request(path, { method: 'PUT', body: JSON.stringify(data) }),

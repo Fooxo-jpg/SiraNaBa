@@ -18,7 +18,7 @@ public class MonthlyMaintenanceService {
     public MonthlyMaintenanceService(MongoTemplate mongo, TenantRepository tenants) {
         this.mongo = mongo; this.tenants = tenants;
     }
-    public record Schedule(int dayOfMonth, String nextDate, int pendingNotifications) {}
+    public record Schedule(int dayOfMonth, String nextDate, int pendingNotifications, int invoiceNoticeDays) {}
     public record Saved(Schedule schedule, boolean changed, int notifiedTenants) {}
     private LocalDate today() { return LocalDate.now(ZoneId.of("Asia/Manila")); }
     private MonthlyMaintenanceSettings settings() {
@@ -27,7 +27,8 @@ public class MonthlyMaintenanceService {
     }
     public synchronized Schedule get() { return view(settings(), today()); }
     static Schedule view(MonthlyMaintenanceSettings settings, LocalDate today) {
-        return new Schedule(settings.getDayOfMonth(), nextDate(settings, today).toString(), settings.getPendingTenantIds().size());
+        int noticeDays = settings.getInvoiceNoticeDays() == 0 ? 7 : settings.getInvoiceNoticeDays();
+        return new Schedule(settings.getDayOfMonth(), nextDate(settings, today).toString(), settings.getPendingTenantIds().size(), noticeDays);
     }
     static LocalDate nextDate(MonthlyMaintenanceSettings settings, LocalDate today) {
         LocalDate start = settings.getEffectiveDate() == null ? today : LocalDate.parse(settings.getEffectiveDate());
@@ -41,24 +42,34 @@ public class MonthlyMaintenanceService {
         return candidate;
     }
     public synchronized Saved update(String date) {
+        return update(date, null);
+    }
+    public synchronized Saved update(String date, Integer invoiceNoticeDays) {
         LocalDate selected;
         try { selected = LocalDate.parse(date); }
         catch (RuntimeException error) { throw new ApiException(HttpStatus.BAD_REQUEST, "Choose a valid maintenance date."); }
         LocalDate today = today();
         if (selected.isBefore(today)) throw new ApiException(HttpStatus.BAD_REQUEST, "Choose today or a future date.");
         MonthlyMaintenanceSettings settings = settings();
+        int requestedNoticeDays = invoiceNoticeDays == null
+                ? (settings.getInvoiceNoticeDays() == 0 ? 7 : settings.getInvoiceNoticeDays())
+                : invoiceNoticeDays;
+        if (requestedNoticeDays < 3 || requestedNoticeDays > 14)
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invoice notice must be between 3 and 14 days.");
         int notified = deliverPending(settings);
-        boolean changed = !selected.equals(nextDate(settings, today));
-        if (changed) {
+        boolean scheduleChanged = !selected.equals(nextDate(settings, today));
+        boolean noticeChanged = settings.getInvoiceNoticeDays() != requestedNoticeDays;
+        if (scheduleChanged) {
             settings.setDayOfMonth(selected.getDayOfMonth());
             settings.setEffectiveDate(selected.toString());
             settings.setRevision(UUID.randomUUID().toString());
             settings.setChangedAt(Instant.now());
             settings.setPendingTenantIds(new ArrayList<>(tenants.findAll().stream().map(Tenant::getId).toList()));
-            mongo.save(settings);
-            notified += deliverPending(settings);
         }
-        return new Saved(view(settings, today), changed, notified);
+        settings.setInvoiceNoticeDays(requestedNoticeDays);
+        if (scheduleChanged || noticeChanged) mongo.save(settings);
+        if (scheduleChanged) notified += deliverPending(settings);
+        return new Saved(view(settings, today), scheduleChanged || noticeChanged, notified);
     }
     private int deliverPending(MonthlyMaintenanceSettings settings) {
         int delivered = 0;

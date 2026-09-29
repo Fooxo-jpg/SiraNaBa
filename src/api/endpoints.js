@@ -1,8 +1,15 @@
 import { api } from './client.js';
 
+const toQuery = (params) => {
+  const q = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => v && q.set(k, v));
+  const str = q.toString();
+  return str ? `?${str}` : '';
+};
+
 export const endpoints = {
   getMonthlyMaintenance: () => api.get('/api/admin/monthly-maintenance'),
-  updateMonthlyMaintenance: (date) => api.put('/api/admin/monthly-maintenance', { date }),
+  updateMonthlyMaintenance: (date, invoiceNoticeDays) => api.put('/api/admin/monthly-maintenance', { date, invoiceNoticeDays }),
   getCommandCenter: () => api.get('/api/admin/command-center'),
   getTenant: () => api.get('/api/tenant'),
   updateTenantProfile: (payload) => api.patch('/api/tenant', payload),
@@ -51,6 +58,9 @@ export const endpoints = {
   getDatabaseStatus: () => api.get('/api/admin/system/database'),
   cleanDatabase: (payload) => api.post('/api/admin/system/database/clean', payload),
   getSystemLogs: () => api.get('/api/admin/system/logs'),
+  // Audit trail export. params: { from, to, level, action, tag } (all optional, dates are YYYY-MM-DD).
+  getAuditLogSummary: (params = {}) => api.get(`/api/admin/system/logs/summary${toQuery(params)}`),
+  downloadAuditLog: (format, params = {}) => api.download(`/api/admin/system/logs/export${toQuery({ ...params, format })}`),
 
   // Admin > Staff Management: the maintenance workforce roster.
   getStaff: () => api.get('/api/admin/staff'),

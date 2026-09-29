@@ -4,7 +4,20 @@ import StatCard from '../../components/admin/StatCard.jsx';
 import Card from '../../components/Card.jsx';
 import Icon from '../../components/Icon.jsx';
 import Modal from '../../components/Modal.jsx';
-import { staffManagement } from '../../data/adminMockDb.js';
+
+const specialties = ['Electrician', 'Plumber', 'HVAC Specialist', 'General Repair', 'Cleaner'];
+const capacityGroups = [
+  { label: 'Electrical Engineering', specialties: ['Electrician'], color: 'bg-amber-500' },
+  { label: 'Mechanical & HVAC', specialties: ['HVAC Specialist'], color: 'bg-blue-500' },
+  { label: 'Hydraulic & Plumbing', specialties: ['Plumber'], color: 'bg-cyan-500' },
+  { label: 'General Facility Repair', specialties: ['General Repair', 'Cleaner'], color: 'bg-forest-400' },
+];
+const operationalStatus = [
+  { icon: 'shield', label: 'Security Clearance', detail: '—', tone: 'neutral' },
+  { icon: 'clock', label: 'Shift Overlap', detail: '—', tone: 'neutral' },
+];
+const version = null;
+const incidentReadiness = null;
 import { endpoints } from '../../api/endpoints.js';
 import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
 
@@ -48,7 +61,6 @@ function Avatar({ name }) {
 }
 
 export default function StaffManagement() {
-  const { specialties, capacityGroups, operationalStatus, version, incidentReadiness } = staffManagement;
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);

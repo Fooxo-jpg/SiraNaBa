@@ -23,11 +23,11 @@ class TicketReportServiceTest {
         returned.setUnit("1203");
         returned.setStage("Resolved");
         when(mongo.findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class), eq(Ticket.class))).thenReturn(returned);
-        Ticket result = new TicketReportService(mongo, audit).update("TKT-1000", new TicketReportDetailsRequest(" Kitchen leak ", 2, " 1203 "));
+        Ticket result = new TicketReportService(mongo, audit).update("TKT-1000", new TicketReportDetailsRequest(" Kitchen leak ", 1, " 1203 "));
         ArgumentCaptor<Update> update = ArgumentCaptor.forClass(Update.class);
         verify(mongo).findAndModify(any(Query.class), update.capture(), any(FindAndModifyOptions.class), eq(Ticket.class));
         var fields = update.getValue().getUpdateObject().get("$set", org.bson.Document.class);
-        assertEquals(2, fields.get("tower"));
+        assertEquals(1, fields.get("tower"));
         assertEquals("1203", fields.get("unit"));
         assertEquals("Kitchen leak", fields.get("issueType"));
         assertEquals(java.util.Set.of("tower", "unit", "issueType", "updatedAt"), fields.keySet());

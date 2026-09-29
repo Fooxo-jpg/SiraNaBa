@@ -12,6 +12,8 @@ import java.util.List;
 public class MonthlyMaintenanceSettings {
     @Id private String id = "monthly-maintenance";
     private int dayOfMonth = 20;
+    /** How many days before an unpaid rent due date its invoice is delivered. */
+    private int invoiceNoticeDays = 7;
     private String effectiveDate;
     private String revision;
     private Instant changedAt;

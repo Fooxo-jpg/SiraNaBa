@@ -7,10 +7,9 @@ import StatCard from '../../components/admin/StatCard.jsx';
 import Card from '../../components/Card.jsx';
 import Icon from '../../components/Icon.jsx';
 
-import { commandCenter } from '../../data/adminMockDb.js';
 
 export default function CommandCenter() {
-  const { staffReadiness } = commandCenter;
+  const staffReadiness = { emergencyProtocol: '—', energyOptimization: '—' };
   const [metrics, setMetrics] = useState(null);
   const [metricsError, setMetricsError] = useState('');
   const [staff, setStaff] = useState(null);

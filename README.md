@@ -69,7 +69,7 @@ payment status from the admin side) updates that one record, and the other side 
 works the same way: it reads/writes the MongoDB `staff` collection via `GET/POST/PATCH/DELETE
 /api/admin/staff` (see `StaffController`/`StaffService` on the backend), so adding, editing, or
 removing a staff member persists for real instead of resetting on refresh. The remaining admin
-screens (Command Center, Triage, Configuration, IoT) still run on `src/data/adminMockDb.js`.
+screens (Command Center, Triage, Configuration, IoT) still run on placeholder values in the page components.
 
 ## Responsive behavior
 

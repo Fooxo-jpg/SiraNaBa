@@ -1,13 +1,11 @@
 export const TOWERS = [
-  { id: 1, name: 'Tower 1' },
-  { id: 2, name: 'Tower 2' },
+  { id: 1, name: 'Main Building' },
 ];
 
-export const TOP_FLOOR = 26;
-export const FIRST_PENTHOUSE_FLOOR = 25; // floors 25 and 26
+export const TOP_FLOOR = 12;
 export const UNITS_PER_FLOOR = 10;
 
-export const UNIT_TYPES = ['Studio', 'One-Bedroom', 'Two-Bedroom', 'Penthouse'];
+export const UNIT_TYPES = ['Studio', 'One-Bedroom', 'Two-Bedroom'];
 export const UNIT_LAYOUT = [
   ...Array(4).fill('Studio'),
   ...Array(4).fill('One-Bedroom'),
@@ -18,23 +16,19 @@ export const RENT_BY_TYPE = {
   Studio: 15000,
   'One-Bedroom': 25000,
   'Two-Bedroom': 40000,
-  Penthouse: 120000,
 };
-
-export const PENTHOUSES_PER_FLOOR = 1;
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
 export const LEVELS = [
   { key: 'RF', label: 'Rooftop · Sky Lounge', short: 'RF', kind: 'roof', hasRooms: false },
   ...Array.from({ length: TOP_FLOOR - 1 }, (_, i) => {
-    const n = TOP_FLOOR - i; // 26 down to 2
-    const penthouse = n >= FIRST_PENTHOUSE_FLOOR;
+    const n = TOP_FLOOR - i; // 12 down to 2
     return {
       key: pad2(n),
-      label: penthouse ? `Floor ${n} · Penthouse` : `Floor ${n}`,
+      label: `Floor ${n}`,
       short: String(n),
-      kind: penthouse ? 'penthouse' : 'floor',
+      kind: 'floor',
       number: n,
       hasRooms: true,
     };
@@ -50,15 +44,11 @@ export function levelByKey(key) {
 
 function buildLevelRooms(tower, level) {
   if (!level.hasRooms) return [];
-  const count = level.kind === 'penthouse' ? PENTHOUSES_PER_FLOOR : UNITS_PER_FLOOR;
+  const count = UNITS_PER_FLOOR;
   return Array.from({ length: count }, (_, i) => {
     const idx = i + 1;
     const base = { id: `T${tower}-${level.key}-${pad2(idx)}`, tower, levelKey: level.key, index: idx, count };
-    if (level.kind === 'penthouse') {
-      const suffix = count > 1 ? `-${idx}` : '';
-      return { ...base, number: `PH${level.number}${suffix}`, name: `Penthouse ${level.number}${suffix}`, type: 'Penthouse' };
-    }
-    // Floor 3, room 4 -> "304"; floor 24, room 10 -> "2410".
+    // Floor 3, room 4 -> "304"; floor 12, room 10 -> "1210".
     const number = `${level.number}${pad2(idx)}`;
     return { ...base, number, name: `Unit ${number}`, type: UNIT_LAYOUT[i] };
   });

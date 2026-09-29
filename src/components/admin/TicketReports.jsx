@@ -53,7 +53,7 @@ export function AIReportAnalysis({ tickets, loading, error }) {
             <h3 className="text-xs font-semibold uppercase tracking-wide text-forest-700">Repeated reports in a unit</h3>
             <ul className="mt-2 space-y-3 text-sm leading-relaxed text-ink-700">
               {patterns.units.map((pattern) => <li key={pattern.key} className="break-words">
-                Tower {pattern.tower} · Unit {pattern.units[0]} has made {pattern.count} reports about <span className="font-semibold text-ink-900">{pattern.issue}</span>.
+                Main Building · Unit {pattern.units[0]} has made {pattern.count} reports about <span className="font-semibold text-ink-900">{pattern.issue}</span>.
               </li>)}
             </ul>
           </section>}
@@ -61,7 +61,7 @@ export function AIReportAnalysis({ tickets, loading, error }) {
             <h3 className="text-xs font-semibold uppercase tracking-wide text-forest-700">Shared problems on a floor</h3>
             <ul className="mt-2 space-y-4 text-sm leading-relaxed text-ink-700">
               {patterns.floors.map((pattern) => <li key={pattern.key} className="break-words">
-                <p>Tower {pattern.tower} · Floor {pattern.floor}: {pattern.units.length} units ({pattern.units.join(', ')}) have reported the same problem: <span className="font-semibold text-ink-900">{pattern.issue}</span> ({pattern.category}), across {pattern.count} reports.</p>
+                <p>Main Building · Floor {pattern.floor}: {pattern.units.length} units ({pattern.units.join(', ')}) have reported the same problem: <span className="font-semibold text-ink-900">{pattern.issue}</span> ({pattern.category}), across {pattern.count} reports.</p>
                 {pattern.description && <p className="mt-1 text-xs text-ink-700/60">Reported details: {pattern.description}</p>}
               </li>)}
             </ul>

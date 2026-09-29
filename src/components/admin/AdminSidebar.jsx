@@ -1,9 +1,11 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import Icon from '../Icon.jsx';
-import { adminUser } from '../../data/adminMockDb.js';
 import { useSession } from '../../context/SessionContext.jsx';
 import { endpoints } from '../../api/endpoints.js';
+
+// TODO: replace with the signed-in admin from SessionContext.
+const adminUser = { name: 'Administrator', role: '—' };
 
 const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', icon: 'grid', end: true },

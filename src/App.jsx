@@ -86,8 +86,8 @@ export default function App() {
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
       <Route path="/login" element={<Login />} />
 
-      {/* Admin portal: still runs on its own local mock data (adminMockDb.js),
-          but now only reachable by accounts with the ADMIN role. */}
+      {/* Admin portal: some screens are still placeholders,
+          but only reachable by accounts with the ADMIN role. */}
       <Route path="/admin" element={<RequireAdmin><CommandCenter /></RequireAdmin>} />
       <Route path="/admin/triage" element={<RequireAdmin><TriageDispatch /></RequireAdmin>} />
       <Route path="/admin/financial" element={<RequireAdmin><TenantManagement /></RequireAdmin>} />

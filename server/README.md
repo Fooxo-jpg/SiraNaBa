@@ -164,7 +164,7 @@ additional `User`/`Tenant` documents in MongoDB directly (each `User` has a
 
 Note: the admin portal's **Tenant Management** and **Building Map** screens use the API (see
 "Registering tenants" and "Keeping the tenant and admin sides in sync" below). The other admin
-screens still run on `adminMockDb.js`.
+screens still run on placeholder values in the page components.
 
 ## Project layout
 

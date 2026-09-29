@@ -56,7 +56,8 @@ public class TenantRegistrationService {
         } catch (DateTimeParseException ex) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Lease start must be a valid date (yyyy-MM-dd).");
         }
-        double rent = UnitPricing.monthlyRent(req.unitType()); // also rejects unknown unit types
+        BuildingCatalog.Room room = BuildingCatalog.requireRoom(req.roomId(), req.tower(), req.unit(), req.unitType());
+        double rent = UnitPricing.monthlyRent(room.type());
 
         if (userRepository.findByEmailIgnoreCase(email).isPresent()) {
             throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists.");
@@ -76,11 +77,11 @@ public class TenantRegistrationService {
         tenant.setFirstName(parts.length > 1 ? fullName.substring(0, fullName.length() - tenant.getLastName().length()).trim() : "");
         tenant.setEmail(email);
         tenant.setPhone(req.phone() == null ? null : req.phone().trim());
-        tenant.setRoomId(req.roomId());
-        tenant.setTower(req.tower());
-        tenant.setUnit(req.unit().toUpperCase(Locale.ROOT));
-        tenant.setUnitType(req.unitType());
-        tenant.setBuilding("Tower " + req.tower());
+        tenant.setRoomId(room.id());
+        tenant.setTower(room.building());
+        tenant.setUnit(room.unit());
+        tenant.setUnitType(room.type());
+        tenant.setBuilding("Main Building");
         tenant.setMonthlyRent(rent);
         tenant.setLeaseStart(leaseStart.toString());
         tenant.setRentDueDate(due.toString());
@@ -122,7 +123,7 @@ public class TenantRegistrationService {
         EmailService.SendResult sent = emailService.sendWelcome(tenant, password);
         auditLogService.insert("TENANT", tenant.getTenantCode() + " — new tenant "
                 + (tenant.getFirstName() + " " + tenant.getLastName()).trim()
-                + " (Tower " + tenant.getTower() + ", Unit " + tenant.getUnit() + ")");
+                + " (Main Building, Unit " + tenant.getUnit() + ")");
         return new RegisterTenantResponse(tenant.getId(), email, rent, tenant.getRentDueDate(), sent.sent(), sent.message());
     }
 
@@ -143,7 +144,7 @@ public class TenantRegistrationService {
                 "Phone: " + phone,
                 "",
                 "YOUR UNIT",
-                "Tower " + t.getTower() + ", Unit " + t.getUnit() + " (" + t.getUnitType() + ")",
+                "Main Building, Unit " + t.getUnit() + " (" + t.getUnitType() + ")",
                 "",
                 "LEASE AGREEMENT",
                 "Lease start: " + LocalDate.parse(t.getLeaseStart()).format(fmt),

@@ -73,7 +73,7 @@ export default function BuildingMap() {
     ).map((r) => ({
       key: r.id,
       title: r.name,
-      where: `T${r.tower} · ${levelByKey(r.levelKey).short}`,
+      where: `Floor ${levelByKey(r.levelKey).short}`,
       go: { tower: r.tower, levelKey: r.levelKey, roomId: r.id },
     }));
     const tenantHits = tenants
@@ -81,7 +81,7 @@ export default function BuildingMap() {
       .map((t) => ({
         key: `tenant-${t.id}`,
         title: `${t.name} · ${t.unit}`,
-        where: `T${t.tower} · ${levelByKey(t.levelKey).short}`,
+        where: `Floor ${levelByKey(t.levelKey).short}`,
         go: { tower: t.tower, levelKey: t.levelKey, roomId: t.roomId },
       }));
     // A room can match both by number and by tenant name; list it once.
@@ -157,8 +157,8 @@ export default function BuildingMap() {
           </div>
 
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-ink-700/60">
-            <span><b className="font-mono text-ink-900">{TOWERS.length}</b> towers</span>
-            <span><b className="font-mono text-ink-900">{LEVELS.length}</b> levels each</span>
+            <span><b className="font-mono text-ink-900">{TOWERS.length}</b> building</span>
+            <span><b className="font-mono text-ink-900">12</b> floors</span>
             <span><b className="font-mono text-ink-900">{ALL_ROOMS.length}</b> rooms</span>
             <span><b className="font-mono text-forest-600">{tenants.length}</b> occupied</span>
             <span><b className="font-mono text-ink-900">{ALL_ROOMS.length - tenants.length}</b> vacant</span>
@@ -177,7 +177,6 @@ export default function BuildingMap() {
                 typeFilter === t ? 'border-ink-700 bg-gray-100 text-ink-900' : 'border-black/10 text-ink-700/70 hover:bg-sand-100'
               }`}
             >
-              {t === 'Penthouse' && <span className="h-2 w-2 rounded-full bg-[#E2C7A8]" />}
               {t}
               <span className="font-mono text-ink-700/50">{typeCounts[t].occupied}/{typeCounts[t].total}</span>
             </button>
@@ -191,7 +190,7 @@ export default function BuildingMap() {
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[21rem_minmax(0,1fr)]">
-        {/* Elevation: both towers, every level */}
+        {/* Elevation: one building with service levels and every floor. */}
         <Card className="min-w-0 p-4">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-700/40">
             Building Elevation · click a level
@@ -236,9 +235,7 @@ export default function BuildingMap() {
                                       ? 'bg-ink-900'
                                       : tenantByRoomId.has(r.id)
                                         ? 'bg-forest-500'
-                                        : l.kind === 'penthouse'
-                                          ? 'bg-[#E2C7A8]'
-                                          : 'bg-gray-300'
+                                        : 'bg-gray-300'
                                   }`}
                                 />
                               ))}
@@ -257,7 +254,6 @@ export default function BuildingMap() {
           <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px] text-ink-700/50">
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-forest-500" /> Occupied</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-gray-300" /> Vacant</span>
-            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-[#E2C7A8]" /> Vacant penthouse</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-gray-200" /> Sky lounge</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-gray-300" /> Lobby</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-gray-500" /> Parking</span>
@@ -272,11 +268,7 @@ export default function BuildingMap() {
                 <p className="text-xs font-semibold uppercase tracking-wide text-ink-700/60">{tower.name}</p>
                 <h2 className="text-lg font-bold text-ink-900">{level.label}</h2>
                 <p className="text-xs text-ink-700/50">
-                  {level.hasRooms
-                    ? level.kind === 'penthouse'
-                      ? `${rooms.length} ${rooms.length === 1 ? 'penthouse' : 'penthouses'}`
-                      : `${rooms.length} rooms`
-                    : 'Open area · no rooms'}
+                  {level.hasRooms ? `${rooms.length} rooms` : 'Open area · no rooms'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -303,7 +295,6 @@ export default function BuildingMap() {
               <div className={`grid gap-2.5 ${rooms.length <= 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 sm:grid-cols-5'}`}>
                 {rooms.map((r) => {
                   const isSel = selRoom?.id === r.id;
-                  const isPenthouse = r.type === 'Penthouse';
                   const occupant = tenantByRoomId.get(r.id);
                   return (
                     <button
@@ -312,10 +303,8 @@ export default function BuildingMap() {
                       title={`${r.name} · ${r.type} · ${occupant ? occupant.name : 'Vacant'}`}
                       className={`flex flex-col items-start rounded-lg border p-2.5 text-left transition ${dimmed(r) ? 'opacity-25' : ''} ${
                         occupant
-                          ? `border-forest-200 bg-forest-50 text-forest-800 ${isPenthouse ? 'py-6' : ''}`
-                          : isPenthouse
-                            ? 'border-[#EBDAC6] bg-[#FBF5EE] py-6 text-[#8A6238]'
-                            : 'border-gray-200 bg-gray-50 text-gray-700'
+                          ? 'border-forest-200 bg-forest-50 text-forest-800'
+                          : 'border-gray-200 bg-gray-50 text-gray-700'
                       } ${isSel ? 'ring-2 ring-ink-700 ring-offset-1' : 'hover:shadow-card'}`}
                     >
                       <span className="font-mono text-sm font-bold leading-tight">{r.number}</span>

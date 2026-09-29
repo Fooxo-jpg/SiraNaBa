@@ -6,7 +6,6 @@ import Card from '../../components/Card.jsx';
 import Icon from '../../components/Icon.jsx';
 import Modal from '../../components/Modal.jsx';
 import StatusBadge from '../../components/StatusBadge.jsx';
-import { triageDispatch } from '../../data/adminMockDb.js';
 import { endpoints } from '../../api/endpoints.js';
 import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
 import { formatRelativeTime } from '../../utils/format.js';
@@ -32,7 +31,7 @@ function formatTowerRoom(location) {
 }
 
 export default function TriageDispatch() {
-  const { technicians } = triageDispatch;
+  const technicians = []; // TODO: load from the staff API
   const [tickets, setTickets] = useState([]);
   const [ticketsError, setTicketsError] = useState('');
   const [ticketsLoaded, setTicketsLoaded] = useState(false);
@@ -174,7 +173,7 @@ export default function TriageDispatch() {
   };
 
   const towerRoom = (ticket) => {
-    if (ticket.tower && ticket.unit) return `Tower ${ticket.tower} · Unit ${ticket.unit}`;
+    if (ticket.tower && ticket.unit) return `Main Building · Unit ${ticket.unit}`;
     return formatTowerRoom(ticket.location);
   };
 
@@ -267,7 +266,7 @@ export default function TriageDispatch() {
                     <tr className="text-left text-xs font-semibold uppercase tracking-wide text-ink-700/40">
                       <th className="pb-2 pr-3">Ticket ID</th>
                       <th className="pb-2 pr-3">Subject &amp; Location</th>
-                      <th className="pb-2 pr-3">Tower / Room</th>
+                      <th className="pb-2 pr-3">Building / Room</th>
                       <th className="pb-2 pr-3">Severity</th>
                       <th className="pb-2 pr-3">Category</th>
                       <th className="pb-2 pr-3">Reported</th>
@@ -415,7 +414,7 @@ export default function TriageDispatch() {
                         <span className="shrink-0 rounded-full bg-status-highBg px-2 py-0.5 text-[10px] font-bold text-status-high">{item.tickets.length} reports</span>
                       </div>
                       <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                        <div><dt className="text-ink-700/40">Tower</dt><dd className="font-semibold text-ink-900">{item.tower}</dd></div>
+                        <div><dt className="text-ink-700/40">Building</dt><dd className="font-semibold text-ink-900">Main Building</dd></div>
                         <div><dt className="text-ink-700/40">Floor</dt><dd className="font-semibold text-ink-900">{item.floor || reportFloor(item.latest) || '—'}</dd></div>
                         <div><dt className="text-ink-700/40">Unit</dt><dd className="font-semibold text-ink-900">{item.unit}</dd></div>
                       </dl>

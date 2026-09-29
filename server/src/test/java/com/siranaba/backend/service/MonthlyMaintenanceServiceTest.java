@@ -69,4 +69,11 @@ class MonthlyMaintenanceServiceTest {
         assertThrows(ApiException.class, () -> service.update(LocalDate.now(ZoneId.of("Asia/Manila")).minusDays(1).toString()));
         verifyNoInteractions(tenants);
     }
+    @Test void invoiceNoticeMustStayBetweenThreeDaysAndTwoWeeks() {
+        String date = service.get().nextDate();
+        assertThrows(ApiException.class, () -> service.update(date, 2));
+        assertThrows(ApiException.class, () -> service.update(date, 15));
+        assertEquals(3, service.update(date, 3).schedule().invoiceNoticeDays());
+        assertEquals(14, service.update(date, 14).schedule().invoiceNoticeDays());
+    }
 }

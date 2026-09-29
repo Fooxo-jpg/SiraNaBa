@@ -15,8 +15,7 @@ public final class UnitPricing {
     private static final Map<String, Double> RENT_BY_TYPE = Map.of(
             "Studio", 15000.0,
             "One-Bedroom", 25000.0,
-            "Two-Bedroom", 40000.0,
-            "Penthouse", 120000.0
+            "Two-Bedroom", 40000.0
     );
 
     private UnitPricing() {

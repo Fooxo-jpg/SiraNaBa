@@ -74,7 +74,7 @@ export default function AdminBillingPanel({ tenant, onChanged }) {
     + Math.round(Number(form.electricityUsage) * Number(detail.electricityRate) * 100) / 100 + (form.parkingFee ? 1000 : 0);
   return <div className="space-y-5 pb-5">
     <section className="rounded-lg bg-sand-50 p-4"><p className="font-semibold">{tenant.name}</p>
-      <p className="text-xs">{tenant.id} · Tower {tenant.tower}, Unit {tenant.unit} · {tenant.type}</p>
+      <p className="text-xs">{tenant.id} · Main Building, Unit {tenant.unit} · {tenant.type}</p>
       <p className="mt-2 text-xs">{tenant.email || 'No email'} · {tenant.phone || 'No phone'}</p><p className="text-xs">Lease start: {tenant.leaseStart || 'Not recorded'}</p>
     </section>
     {error && <p role="alert" className="rounded-md bg-red-50 p-3 text-red-700">{error}</p>}

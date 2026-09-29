@@ -16,10 +16,10 @@ public record RegisterTenantRequest(
         @NotBlank @Email String email,
         String phone,
         @NotBlank String roomId,
-        @Min(1) @Max(99) int tower,
-        /** Room number as shown on the map, e.g. "402" or "PH25". */
+        @Min(1) @Max(1) int tower,
+        /** Room number as shown on the map, e.g. "402" or "1210". */
         @NotBlank @Pattern(regexp = "[A-Za-z0-9-]{1,10}") String unit,
-        /** Studio | One-Bedroom | Two-Bedroom | Penthouse */
+        /** Studio | One-Bedroom | Two-Bedroom */
         @NotBlank String unitType,
         /** ISO date (yyyy-MM-dd). */
         @NotBlank String leaseStart

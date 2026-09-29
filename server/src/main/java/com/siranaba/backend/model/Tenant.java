@@ -35,7 +35,7 @@ public class Tenant {
     /** Map room id, e.g. "T1-04-02". Unique: one tenant per room. */
     private String roomId;
     private int tower;
-    /** Studio | One-Bedroom | Two-Bedroom | Penthouse */
+    /** Studio | One-Bedroom | Two-Bedroom */
     private String unitType;
     /** PHP, taken from the server-side price list, never from the client. */
     private double monthlyRent;

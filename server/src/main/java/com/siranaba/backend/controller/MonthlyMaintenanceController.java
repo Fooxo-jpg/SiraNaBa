@@ -10,9 +10,9 @@ import org.springframework.web.bind.annotation.*;
 public class MonthlyMaintenanceController {
     private final MonthlyMaintenanceService service;
     public MonthlyMaintenanceController(MonthlyMaintenanceService service) { this.service = service; }
-    public record Request(@NotBlank String date) {}
+    public record Request(@NotBlank String date, Integer invoiceNoticeDays) {}
     @GetMapping public MonthlyMaintenanceService.Schedule get() { return service.get(); }
     @PutMapping public MonthlyMaintenanceService.Saved update(@Valid @RequestBody Request request) {
-        return service.update(request.date());
+        return service.update(request.date(), request.invoiceNoticeDays());
     }
 }
