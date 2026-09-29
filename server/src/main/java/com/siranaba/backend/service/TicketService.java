@@ -24,15 +24,15 @@ public class TicketService {
     private final AuditLogService auditLogService;
     private final TicketRepository ticketRepository;
     private final TenantContext tenantContext;
-    private final TicketTriageQueue ticketTriageQueue;
+    private final TicketTriagePublisher ticketTriagePublisher;
     private final TicketDispatchService ticketDispatchService;
 
     public TicketService(TicketRepository ticketRepository, TenantContext tenantContext,
-                         TicketTriageQueue ticketTriageQueue, TicketDispatchService ticketDispatchService,
+                         TicketTriagePublisher ticketTriagePublisher, TicketDispatchService ticketDispatchService,
                          AuditLogService auditLogService) {
         this.ticketRepository = ticketRepository;
         this.tenantContext = tenantContext;
-        this.ticketTriageQueue = ticketTriageQueue;
+        this.ticketTriagePublisher = ticketTriagePublisher;
         this.ticketDispatchService = ticketDispatchService;
         this.auditLogService = auditLogService;
     }
@@ -86,6 +86,7 @@ public class TicketService {
         ticket.setEstimatedCompletion(null);
 
         Ticket saved = ticketRepository.save(ticket);
+        ticketTriagePublisher.publish(saved.getId());
         auditLogService.insert("TICKET", saved.getId() + " submitted — " + saved.getCategory());
         return saved;
     }

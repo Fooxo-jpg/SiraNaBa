@@ -16,6 +16,7 @@ public class AppProperties {
     private final Gemini gemini = new Gemini();
     private final Seed seed = new Seed();
     private final Mail mail = new Mail();
+    private final Rabbitmq rabbitmq = new Rabbitmq();
     private String portalUrl = "http://localhost:5173/login";
 
     public Cors getCors() { return cors; }
@@ -23,6 +24,7 @@ public class AppProperties {
     public Gemini getGemini() { return gemini; }
     public Seed getSeed() { return seed; }
     public Mail getMail() { return mail; }
+    public Rabbitmq getRabbitmq() { return rabbitmq; }
     public String getPortalUrl() { return portalUrl; }
     public void setPortalUrl(String portalUrl) { this.portalUrl = portalUrl; }
 
@@ -30,6 +32,12 @@ public class AppProperties {
         private String from = "no-reply@siranaba.com";
         public String getFrom() { return from; }
         public void setFrom(String from) { this.from = from; }
+    }
+
+    public static class Rabbitmq {
+        private boolean enabled;
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
     }
 
     public static class Cors {

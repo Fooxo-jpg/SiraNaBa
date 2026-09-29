@@ -6,6 +6,7 @@ import com.siranaba.backend.model.TimelineEvent;
 import com.siranaba.backend.repository.TicketRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -19,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * of Gemini calls from hitting the provider's rate limit.
  */
 @Service
+@ConditionalOnProperty(name = "app.rabbitmq.enabled", havingValue = "false", matchIfMissing = true)
 public class TicketTriageQueue {
 
     public static final String QUEUED_PRIORITY = "Loading...";
@@ -48,6 +50,13 @@ public class TicketTriageQueue {
             Ticket ticket = ticketRepository.findFirstByPriorityOrderBySubmittedAtAsc(QUEUED_PRIORITY).orElse(null);
             if (ticket == null) return;
 
+            process(ticket);
+        } finally {
+            processing.set(false);
+        }
+    }
+
+    public void process(Ticket ticket) {
             TriageResult result = geminiTriageService.triage(
                     ticket.getCategory(), ticket.getTitle(), ticket.getDescription(), ticket.getLocation(), ticket.getAttachments());
             Instant now = Instant.now();
@@ -72,9 +81,6 @@ public class TicketTriageQueue {
             }
             ticket.setTimeline(timeline);
             ticketRepository.save(ticket);
-        } finally {
-            processing.set(false);
-        }
     }
 
     /**

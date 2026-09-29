@@ -26,8 +26,24 @@ spring:
     mongodb:
       uri: ${MONGODB_URI:mongodb://localhost:27017/siranaba}
       database: ${MONGODB_DATABASE:siranaba}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          initial-interval: 1s
+          multiplier: 2
+          max-attempts: 3
 
 app:
+  rabbitmq:
+    # Opt in after starting RabbitMQ. When disabled, the existing local worker is used.
+    enabled: ${RABBITMQ_ENABLED:false}
   # Link included in the welcome email.
   portal-url: ${PORTAL_URL:http://localhost:5173/login}
   mail:
