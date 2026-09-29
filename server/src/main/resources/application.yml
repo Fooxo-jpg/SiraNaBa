@@ -22,6 +22,9 @@ spring:
     properties:
       mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
       mail.smtp.starttls.enable: ${MAIL_STARTTLS:true}
+      mail.smtp.connectiontimeout: ${MAIL_CONNECTION_TIMEOUT_MS:5000}
+      mail.smtp.timeout: ${MAIL_READ_TIMEOUT_MS:5000}
+      mail.smtp.writetimeout: ${MAIL_WRITE_TIMEOUT_MS:5000}
   data:
     mongodb:
       uri: ${MONGODB_URI:mongodb://localhost:27017/siranaba}
@@ -44,8 +47,8 @@ app:
   rabbitmq:
     # Opt in after starting RabbitMQ. When disabled, the existing local worker is used.
     enabled: ${RABBITMQ_ENABLED:false}
-  # Link included in the welcome email.
-  portal-url: ${PORTAL_URL:http://localhost:5173/login}
+  # Public front-end base URL used to build links in outgoing emails.
+  portal-url: ${PORTAL_URL:https://siranaba.up.railway.app}
   mail:
     from: ${MAIL_FROM:${MAIL_USERNAME:no-reply@siranaba.com}}
   cors:

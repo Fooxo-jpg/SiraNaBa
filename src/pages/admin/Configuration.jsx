@@ -114,6 +114,101 @@ function DatabasePanel({ db, error, refreshing, onRefresh }) {
   );
 }
 
+const DEFAULT_TEST_FORM = {
+  tenantCount: 5, staffCount: 3, createTickets: true, minTicketsPerTenant: 1,
+  maxTicketsPerTenant: 4, severity: 'Mixed', randomTicketProgress: true,
+  createNotifications: true, replaceGeneratedData: true,
+  randomizeAccountStatus: true, randomizeRoomAllocation: true,
+};
+
+function TestingDataPanel({ disabled, onGenerated }) {
+  const [form, setForm] = useState(DEFAULT_TEST_FORM);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const number = (field) => (event) => setForm((current) => ({ ...current, [field]: Number(event.target.value) }));
+  const toggle = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.checked }));
+
+  const generate = async (event) => {
+    event.preventDefault(); setGenerating(true); setError(''); setResult(null);
+    try {
+      const created = await endpoints.generateTestData(form);
+      setResult(created);
+      await onGenerated();
+    } catch (err) {
+      setError(err.message || "Couldn't generate test data.");
+    } finally { setGenerating(false); }
+  };
+
+  return (
+    <Card className="border border-status-progress/20 p-5">
+      <div className="mb-4">
+        <h2 className="font-semibold text-ink-900">Testing data generator</h2>
+        <p className="mt-1 text-sm text-ink-700/70">Create database-backed dummy tenants, working portal logins, staff, notifications, and maintenance tickets. Generated records are tagged so they can be replaced without touching real data.</p>
+      </div>
+      <form onSubmit={generate} className="space-y-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="text-sm font-medium text-ink-900">Tenants with fake accounts
+            <input type="number" min="0" max="100" value={form.tenantCount} onChange={number('tenantCount')} className="mt-1 block w-full rounded-md border border-black/10 px-3 py-2" />
+            <span className="mt-1 block text-xs font-normal text-ink-700/50">0–100, limited by vacant units</span>
+          </label>
+          <label className="text-sm font-medium text-ink-900">Maintenance staff
+            <input type="number" min="0" max="50" value={form.staffCount} onChange={number('staffCount')} className="mt-1 block w-full rounded-md border border-black/10 px-3 py-2" />
+            <span className="mt-1 block text-xs font-normal text-ink-700/50">0–50 randomized staff records</span>
+          </label>
+        </div>
+
+        <label className="flex items-start gap-2 rounded-lg bg-sand-50 p-3 text-sm text-ink-900">
+          <input type="checkbox" checked={form.createTickets} onChange={toggle('createTickets')} className="mt-0.5 accent-forest-500" />
+          <span><strong>Create dummy tickets per tenant</strong><span className="block text-xs font-normal text-ink-700/50">Tickets use realistic categories, submission dates, locations, and optional status variation.</span></span>
+        </label>
+        {form.createTickets && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <label className="text-xs font-semibold text-ink-700/60">Minimum
+              <input type="number" min="0" max="20" value={form.minTicketsPerTenant} onChange={number('minTicketsPerTenant')} className="mt-1 block w-full rounded-md border border-black/10 px-3 py-2 text-sm" />
+            </label>
+            <label className="text-xs font-semibold text-ink-700/60">Maximum
+              <input type="number" min="0" max="20" value={form.maxTicketsPerTenant} onChange={number('maxTicketsPerTenant')} className="mt-1 block w-full rounded-md border border-black/10 px-3 py-2 text-sm" />
+            </label>
+            <label className="col-span-2 text-xs font-semibold text-ink-700/60">Severity
+              <select value={form.severity} onChange={(event) => setForm((current) => ({ ...current, severity: event.target.value }))} className="mt-1 block w-full rounded-md border border-black/10 px-3 py-2 text-sm">
+                {['Mixed', 'Low', 'Medium', 'High', 'Severe', 'Critical'].map((value) => <option key={value}>{value}</option>)}
+              </select>
+            </label>
+          </div>
+        )}
+
+        <div className="grid gap-2 text-sm sm:grid-cols-2">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.randomTicketProgress} onChange={toggle('randomTicketProgress')} disabled={!form.createTickets} className="accent-forest-500" /> Random ticket progress</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.createNotifications} onChange={toggle('createNotifications')} className="accent-forest-500" /> Welcome notifications</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.randomizeAccountStatus} onChange={toggle('randomizeAccountStatus')} className="accent-forest-500" /> Random account statuses</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.randomizeRoomAllocation} onChange={toggle('randomizeRoomAllocation')} className="accent-forest-500" /> Random vacant-room allocation</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.replaceGeneratedData} onChange={toggle('replaceGeneratedData')} className="accent-forest-500" /> Replace old test data</label>
+        </div>
+
+        <p className="text-xs text-ink-700/50">Ticket minimum and maximum are applied separately to every generated tenant. Random ticket progress creates pending, coordinating, dispatched, and completed work orders using the generated staff. Random account statuses produce active, scheduled, pending, and overdue examples backed by real billing records.</p>
+
+        <div className="rounded-md bg-status-progressBg p-3 text-xs text-status-progress">
+          Dummy tenant emails use the reserved <strong>example.test</strong> domain. They work as portal usernames but do not send mail to real people. Every generated tenant uses the shared password shown after generation.
+        </div>
+        {error && <p role="alert" className="rounded-md bg-status-highBg p-3 text-sm text-status-high">{error}</p>}
+        {result && (
+          <div role="status" className="rounded-lg border border-status-success/20 bg-status-successBg p-4 text-sm text-ink-900">
+            <p className="font-semibold text-status-success">Test data generated successfully</p>
+            <p className="mt-1">{result.tenantsCreated} tenants · {result.staffCreated} staff · {result.ticketsCreated} tickets · {result.notificationsCreated} notifications</p>
+            <p className="mt-2">Shared test password: <code className="rounded bg-white px-1.5 py-0.5 font-mono font-bold">{result.sharedPassword}</code></p>
+            {result.removedGeneratedRecords > 0 && <p className="mt-1 text-xs text-ink-700/60">Removed {result.removedGeneratedRecords} previously generated records first.</p>}
+            {result.sampleAccounts.length > 0 && <div className="mt-3 max-h-36 overflow-y-auto rounded bg-white p-2 font-mono text-xs">{result.sampleAccounts.map((account) => <p key={account.email}>{account.email} · Unit {account.unit}</p>)}</div>}
+          </div>
+        )}
+        <button type="submit" disabled={disabled || generating || (form.tenantCount === 0 && form.staffCount === 0)} className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:opacity-50">
+          {generating ? 'Generating…' : 'Generate testing data'}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
 export default function Configuration() {
   const P = '—';
   const systemStatus = [
@@ -125,7 +220,7 @@ export default function Configuration() {
   const sessionRemaining = P;
   const [tab, setTab] = useState('logs');
   const [query, setQuery] = useState('');
-  const { clearAfterDatabaseCleanup } = useTenantRegistry();
+  const { clearAfterDatabaseCleanup, reload: reloadTenants } = useTenantRegistry();
   const [cleanOpen, setCleanOpen] = useState(false);
   const [cleanPassword, setCleanPassword] = useState('');
   const [cleanConfirmation, setCleanConfirmation] = useState('');
@@ -331,6 +426,7 @@ export default function Configuration() {
         ) : tab === 'database' ? (
           <DatabasePanel db={db} error={dbError} refreshing={refreshing} onRefresh={checkDb} />
         ) : tab === 'advanced' ? (
+          <div className="space-y-6">
           <Card className="border border-status-high/20 p-5">
             <h2 className="font-semibold text-ink-900">Clean database</h2>
             <p className="mt-2 text-sm text-ink-700/70">Permanently delete all application data from <strong>{db?.database || 'the connected database'}</strong>, including tenants and their logins, staff, tickets, attachments, billing, payments, notifications, and logs. All admin login accounts and passwords will be kept.</p>
@@ -339,6 +435,8 @@ export default function Configuration() {
             <button type="button" disabled={!db?.connected || !!dbError || cleaning} onClick={() => { setCleanResult(null); setCleanOpen(true); }} className="mt-4 rounded-md bg-status-high px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Clean database…</button>
             {(!db?.connected || dbError) && <p className="mt-2 text-xs text-ink-700/60">A confirmed database connection is required. Refresh the Database tab to check it.</p>}
           </Card>
+          <TestingDataPanel disabled={!db?.connected || !!dbError} onGenerated={async () => { await Promise.all([checkDb(), checkLogs(), reloadTenants()]); }} />
+          </div>
         ) : (
           <Card className="flex flex-col items-center justify-center gap-2 p-10 text-center text-sm text-ink-700/50">
             <Icon name="info" size={18} className="text-ink-700/30" />

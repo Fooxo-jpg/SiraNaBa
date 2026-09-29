@@ -7,4 +7,5 @@ import java.util.Optional;
 
 public interface StaffRepository extends MongoRepository<Staff, String> {
     Optional<Staff> findFirstByNameIgnoreCase(String name);
+    java.util.List<Staff> findByGeneratedTestDataTrue();
 }

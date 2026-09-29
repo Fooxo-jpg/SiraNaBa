@@ -5,4 +5,5 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 
 public interface TenantRepository extends MongoRepository<Tenant, String> {
     boolean existsByRoomId(String roomId);
+    java.util.List<Tenant> findByGeneratedTestDataTrue();
 }

@@ -54,7 +54,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String userId = claims.getSubject();
                 Optional<User> user = userRepository.findById(userId);
                 user.ifPresent(u -> {
-                    AuthenticatedUser principal = new AuthenticatedUser(u.getId(), u.getEmail(), u.getTenantId(), u.getRole());
+                    AuthenticatedUser principal = new AuthenticatedUser(u.getId(), u.getEmail(), u.getTenantId(), u.getRole(), u.isMustChangePassword());
                     var auth = new UsernamePasswordAuthenticationToken(
                             principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + u.getRole())));
                     SecurityContextHolder.getContext().setAuthentication(auth);
@@ -69,6 +69,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    public record AuthenticatedUser(String userId, String email, String tenantId, String role) {
+    public record AuthenticatedUser(String userId, String email, String tenantId, String role, boolean mustChangePassword) {
     }
 }

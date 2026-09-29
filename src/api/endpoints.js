@@ -25,6 +25,8 @@ export const endpoints = {
   assignAdminTicket: (ticketId, staffId) => api.post(`/api/admin/tickets/${ticketId}/assign`, { staffId }),
   markAdminTicketArrived: (ticketId) => api.post(`/api/admin/tickets/${ticketId}/dispatch-status`, { status: 'Arrived' }),
   updateAdminDispatchStatus: (ticketId, status) => api.post(`/api/admin/tickets/${ticketId}/dispatch-status`, { status }),
+  getMaintenanceSchedules: () => api.get('/api/admin/maintenance-schedules'),
+  createMaintenanceSchedule: (payload) => api.post('/api/admin/maintenance-schedules', payload),
 
   getBilling: () => api.get('/api/billing'),
   addPaymentMethod: (payload) => api.post('/api/billing/payment-methods', payload),
@@ -57,6 +59,7 @@ export const endpoints = {
   // Admin > Configuration: live MongoDB connection, version, sizes and collections.
   getDatabaseStatus: () => api.get('/api/admin/system/database'),
   cleanDatabase: (payload) => api.post('/api/admin/system/database/clean', payload),
+  generateTestData: (payload) => api.post('/api/admin/system/test-data', payload),
   getSystemLogs: () => api.get('/api/admin/system/logs'),
   // Audit trail export. params: { from, to, level, action, tag } (all optional, dates are YYYY-MM-DD).
   getAuditLogSummary: (params = {}) => api.get(`/api/admin/system/logs/summary${toQuery(params)}`),

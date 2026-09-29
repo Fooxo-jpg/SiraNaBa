@@ -19,4 +19,14 @@ class BuildingCatalogTest {
         assertThrows(ApiException.class, () -> BuildingCatalog.requireRoom("T1-13-01", 1, "1301", "Studio"));
         assertThrows(ApiException.class, () -> BuildingCatalog.requireRoom("T1-04-01", 1, "401", "Two-Bedroom"));
     }
+
+    @Test void expandsOnlyResidentialFloorsIntoAllTenRooms() {
+        var rooms = BuildingCatalog.roomIdsForFloor("T1-04");
+        assertEquals(10, rooms.size());
+        assertEquals("T1-04-01", rooms.get(0));
+        assertEquals("T1-04-10", rooms.get(9));
+        assertEquals("T1-12-10", BuildingCatalog.requireRoomId("T1-12-10").id());
+        assertThrows(ApiException.class, () -> BuildingCatalog.roomIdsForFloor("T1-01"));
+        assertThrows(ApiException.class, () -> BuildingCatalog.roomIdsForFloor("T2-04"));
+    }
 }

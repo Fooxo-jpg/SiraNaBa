@@ -57,4 +57,5 @@ public class Ticket {
     private List<Attachment> attachments = new ArrayList<>();
     private String safetyNote = "";
     private List<TimelineEvent> timeline = new ArrayList<>();
+    private boolean generatedTestData;
 }

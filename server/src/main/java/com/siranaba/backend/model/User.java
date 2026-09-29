@@ -25,4 +25,8 @@ public class User {
     private String tenantId;
 
     private String role = "TENANT";
+
+    /** New tenants must replace the generated initial password after their first sign-in. */
+    private boolean mustChangePassword;
+    private boolean generatedTestData;
 }

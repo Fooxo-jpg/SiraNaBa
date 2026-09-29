@@ -7,6 +7,7 @@ public record RegisterTenantResponse(
         double monthlyRent,
         String rentDueDate,
         boolean emailSent,
+        boolean emailQueued,
         String emailMessage
 ) {
 }

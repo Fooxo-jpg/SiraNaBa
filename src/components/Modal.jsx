@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import Icon from './Icon.jsx';
 
-export default function Modal({ open, onClose, title, children, footer, maxWidth = 'max-w-md' }) {
+export default function Modal({ open, onClose, title, children, footer, maxWidth = 'max-w-md', dismissible = true }) {
   const dialogRef = useRef(null);
   // Keep the latest onClose in a ref. Callers usually pass an inline function,
   // which changes every render; if it were an effect dependency, the effect
@@ -12,19 +12,19 @@ export default function Modal({ open, onClose, title, children, footer, maxWidth
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => e.key === 'Escape' && onCloseRef.current();
+    const onKey = (e) => e.key === 'Escape' && dismissible && onCloseRef.current();
     document.addEventListener('keydown', onKey);
     // Focus the dialog once on open, but don't override an autofocused field.
     if (!dialogRef.current?.contains(document.activeElement)) dialogRef.current?.focus();
     return () => document.removeEventListener('keydown', onKey);
-  }, [open]);
+  }, [open, dismissible]);
 
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      onMouseDown={(e) => e.target === e.currentTarget && dismissible && onClose()}
     >
       <div
         ref={dialogRef}
@@ -36,13 +36,15 @@ export default function Modal({ open, onClose, title, children, footer, maxWidth
       >
         <div className="mb-4 flex flex-shrink-0 items-start justify-between px-6 pt-6">
           <h2 className="text-lg font-semibold text-ink-900">{title}</h2>
-          <button
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="rounded-full p-1 text-ink-700/60 hover:bg-sand-100"
-          >
-            <Icon name="close" size={18} />
-          </button>
+          {dismissible && (
+            <button
+              onClick={onClose}
+              aria-label="Close dialog"
+              className="rounded-full p-1 text-ink-700/60 hover:bg-sand-100"
+            >
+              <Icon name="close" size={18} />
+            </button>
+          )}
         </div>
         <div className="min-h-0 overflow-y-auto px-6 text-sm text-ink-900 thin-scrollbar">{children}</div>
         {footer && <div className="mt-6 flex flex-shrink-0 justify-end gap-3 border-t border-black/5 px-6 py-4">{footer}</div>}

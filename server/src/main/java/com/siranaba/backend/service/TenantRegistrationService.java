@@ -17,9 +17,12 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
+import java.security.SecureRandom;
 
 @Service
 public class TenantRegistrationService {
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final char[] PASSWORD_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz".toCharArray();
 
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
@@ -27,6 +30,7 @@ public class TenantRegistrationService {
     private final NotificationRepository notificationRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final WelcomeEmailDispatcher welcomeEmailDispatcher;
     private final TenantCodeService tenantCodeService;
     private final AuditLogService auditLogService;
     private final BillingLedgerService ledger;
@@ -34,13 +38,15 @@ public class TenantRegistrationService {
     public TenantRegistrationService(TenantRepository tenantRepository, UserRepository userRepository,
                                      BillingRepository billingRepository, NotificationRepository notificationRepository,
                                      PasswordEncoder passwordEncoder, EmailService emailService,
-                                     TenantCodeService tenantCodeService, AuditLogService auditLogService, BillingLedgerService ledger) {
+                                     WelcomeEmailDispatcher welcomeEmailDispatcher, TenantCodeService tenantCodeService,
+                                     AuditLogService auditLogService, BillingLedgerService ledger) {
         this.tenantRepository = tenantRepository;
         this.userRepository = userRepository;
         this.billingRepository = billingRepository;
         this.notificationRepository = notificationRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
+        this.welcomeEmailDispatcher = welcomeEmailDispatcher;
         this.tenantCodeService = tenantCodeService;
         this.auditLogService = auditLogService;
         this.ledger = ledger;
@@ -56,7 +62,7 @@ public class TenantRegistrationService {
         } catch (DateTimeParseException ex) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Lease start must be a valid date (yyyy-MM-dd).");
         }
-        BuildingCatalog.Room room = BuildingCatalog.requireRoom(req.roomId(), req.tower(), req.unit(), req.unitType());
+        BuildingCatalog.Room room = BuildingCatalog.requireRoomId(req.roomId());
         double rent = UnitPricing.monthlyRent(room.type());
 
         if (userRepository.findByEmailIgnoreCase(email).isPresent()) {
@@ -66,7 +72,7 @@ public class TenantRegistrationService {
             throw new ApiException(HttpStatus.CONFLICT, "This unit is already assigned to another tenant.");
         }
 
-        String password = initialPassword(fullName, req.tower(), req.unit());
+        String password = initialPassword(fullName, room.unit());
         LocalDate due = leaseStart.plusMonths(1);
         long daysUntilDue = Math.max(0, ChronoUnit.DAYS.between(LocalDate.now(), due));
 
@@ -100,6 +106,7 @@ public class TenantRegistrationService {
             user.setPasswordHash(passwordEncoder.encode(password));
             user.setTenantId(tenant.getId());
             user.setRole("TENANT");
+            user.setMustChangePassword(true);
             userRepository.save(user);
             billingRepository.save(BillingLedgerService.initial(tenant));
 
@@ -120,11 +127,15 @@ public class TenantRegistrationService {
             throw ex;
         }
 
-        EmailService.SendResult sent = emailService.sendWelcome(tenant, password);
+        boolean emailQueued = emailService.isConfigured();
+        if (emailQueued) welcomeEmailDispatcher.send(tenant, password);
         auditLogService.insert("TENANT", tenant.getTenantCode() + " — new tenant "
                 + (tenant.getFirstName() + " " + tenant.getLastName()).trim()
                 + " (Main Building, Unit " + tenant.getUnit() + ")");
-        return new RegisterTenantResponse(tenant.getId(), email, rent, tenant.getRentDueDate(), sent.sent(), sent.message());
+        String emailMessage = emailQueued
+                ? "The welcome email has been queued for delivery."
+                : "Email is not configured on the server; the account and room assignment were still created.";
+        return new RegisterTenantResponse(tenant.getId(), email, rent, tenant.getRentDueDate(), false, emailQueued, emailMessage);
     }
 
     private static String displayName(Tenant t) {
@@ -180,11 +191,10 @@ public class TenantRegistrationService {
         tenantRepository.deleteById(tenantId);
     }
 
-    static String initialPassword(String fullName, int tower, String unit) {
-        String[] parts = fullName.trim().split("\\s+");
-        String initials = "" + Character.toUpperCase(parts[0].charAt(0))
-                + (parts.length > 1 ? String.valueOf(Character.toUpperCase(parts[parts.length - 1].charAt(0))) : "");
-        String unitPart = unit.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
-        return initials + tower + unitPart;
+    static String initialPassword(String fullName, String unit) {
+        StringBuilder password = new StringBuilder();
+        for (int i = 0; i < 4; i++) password.append(PASSWORD_CHARS[RANDOM.nextInt(PASSWORD_CHARS.length)]);
+        for (String part : fullName.trim().split("\\s+")) password.append(Character.toUpperCase(part.charAt(0)));
+        return password.append(unit.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT)).toString();
     }
 }

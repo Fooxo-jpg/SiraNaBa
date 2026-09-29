@@ -13,4 +13,5 @@ public interface TicketRepository extends MongoRepository<Ticket, String> {
     List<Ticket> findAllByOrderBySubmittedAtAsc();
     long countByTenantIdAndStageNot(String tenantId, String stage);
     long countByTenantIdAndStageNotIn(String tenantId, java.util.Collection<String> stages);
+    java.util.List<Ticket> findByGeneratedTestDataTrue();
 }

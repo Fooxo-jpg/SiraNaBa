@@ -30,4 +30,5 @@ public class Staff {
     private int tickets;
     private String email;
     private String phone;
+    private boolean generatedTestData;
 }

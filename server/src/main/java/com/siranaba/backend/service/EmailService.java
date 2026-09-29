@@ -36,6 +36,10 @@ public class EmailService {
         this.mailHost = mailHost;
     }
 
+    public boolean isConfigured() {
+        return mailSender.getIfAvailable() != null && mailHost != null && !mailHost.isBlank();
+    }
+
     public SendResult sendWelcome(Tenant tenant, String password) {
         JavaMailSender sender = mailSender.getIfAvailable();
         // Spring may still create a sender when MAIL_HOST is set to an empty string.
@@ -64,7 +68,7 @@ public class EmailService {
                 Sign in
                   %s
                   Email:    %s
-                  Password: %s
+                  Initial password: %s
 
                 Please change your password after you sign in for the first time.
 
@@ -76,7 +80,7 @@ public class EmailService {
                 tenant.getUnit(), tenant.getUnitType(),
                 leaseStart,
                 String.format(Locale.ENGLISH, "%,.2f", tenant.getMonthlyRent()),
-                appProperties.getPortalUrl(),
+                portalRoute("/login"),
                 tenant.getEmail(),
                 password));
 
@@ -110,14 +114,14 @@ public class EmailService {
                 Amount due: PHP %s
                 Due date: %s
 
-                View your invoice and payment options: %s/billing
+                View your invoice and payment options: %s
 
                 This notice was sent %d days before the due date.
 
                 - SiraNaBa Facility Management
                 """.formatted(tenant.getFirstName().isBlank() ? tenant.getLastName() : tenant.getFirstName(),
                 rent.getBillingPeriod(), String.format(Locale.ENGLISH, "%,.2f", rent.getBalance()), due,
-                appProperties.getPortalUrl().replaceAll("/$", ""), noticeDays));
+                portalRoute("/billing"), noticeDays));
         try {
             sender.send(msg);
             return new SendResult(true, "Rent invoice emailed to " + tenant.getEmail() + ".");
@@ -125,5 +129,46 @@ public class EmailService {
             log.error("Failed to send rent invoice to {}: {}", tenant.getEmail(), ex.getMessage());
             return new SendResult(false, "The rent invoice email could not be sent and will be retried.");
         }
+    }
+
+    public SendResult sendMaintenanceNotice(Tenant tenant, String scheduledDateTime, String reason) {
+        JavaMailSender sender = mailSender.getIfAvailable();
+        if (sender == null || mailHost == null || mailHost.isBlank()) {
+            log.warn("Mail is not configured; maintenance notice to {} was not sent.", tenant.getEmail());
+            return new SendResult(false, "Email is not configured on the server.");
+        }
+        SimpleMailMessage msg = new SimpleMailMessage();
+        msg.setFrom(appProperties.getMail().getFrom());
+        msg.setTo(tenant.getEmail());
+        msg.setSubject("Scheduled maintenance notice - Unit " + tenant.getUnit());
+        msg.setText("""
+                Hello %s,
+
+                Maintenance has been scheduled for your unit.
+
+                Unit: Main Building, Unit %s
+                Date and time: %s
+                Reason: %s
+
+                This notice was sent in advance so you can make the necessary arrangements.
+                View your notices: %s
+
+                - SiraNaBa Facility Management
+                """.formatted(
+                tenant.getFirstName().isBlank() ? tenant.getLastName() : tenant.getFirstName(),
+                tenant.getUnit(), scheduledDateTime, reason,
+                portalRoute("/notifications")));
+        try {
+            sender.send(msg);
+            return new SendResult(true, "Maintenance notice emailed to " + tenant.getEmail() + ".");
+        } catch (Exception ex) {
+            log.error("Failed to send maintenance notice to {}: {}", tenant.getEmail(), ex.getMessage());
+            return new SendResult(false, "The maintenance email could not be sent.");
+        }
+    }
+
+    private String portalRoute(String route) {
+        String base = appProperties.getPortalUrl().replaceAll("/+$", "").replaceFirst("/login$", "");
+        return base + route;
     }
 }

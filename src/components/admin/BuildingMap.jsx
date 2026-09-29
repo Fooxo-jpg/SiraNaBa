@@ -35,7 +35,7 @@ const OPEN_BAR_COLOR = {
   parking: 'bg-gray-500',
 };
 
-export default function BuildingMap() {
+export default function BuildingMap({ selection = { roomIds: [], floorIds: [] }, onSelectionChange = () => {}, maintenanceRoomIds = new Set() }) {
   const [sel, setSel] = useState({ tower: 1, levelKey: '02', roomId: null });
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -101,6 +101,29 @@ export default function BuildingMap() {
   }, [tenantByRoomId]);
 
   const dimmed = (r) => typeFilter && r.type !== typeFilter;
+  const selectedRooms = new Set(selection.roomIds);
+  const selectedFloors = new Set(selection.floorIds);
+  const floorId = (towerId, levelKey) => `T${towerId}-${levelKey}`;
+  const roomIsSelected = (room) => selectedRooms.has(room.id) || selectedFloors.has(floorId(room.tower, room.levelKey));
+
+  const selectFloor = (event, towerId, levelKey) => {
+    const id = floorId(towerId, levelKey);
+    const additive = event.ctrlKey || event.metaKey;
+    const floorIds = additive
+      ? (selectedFloors.has(id) ? selection.floorIds.filter((value) => value !== id) : [...selection.floorIds, id])
+      : [id];
+    onSelectionChange({ roomIds: additive ? selection.roomIds : [], floorIds });
+    setSel({ tower: towerId, levelKey, roomId: null });
+  };
+
+  const selectRoom = (event, room) => {
+    const additive = event.ctrlKey || event.metaKey;
+    const roomIds = additive
+      ? (selectedRooms.has(room.id) ? selection.roomIds.filter((value) => value !== room.id) : [...selection.roomIds, room.id])
+      : [room.id];
+    onSelectionChange({ roomIds, floorIds: additive ? selection.floorIds : [] });
+    setSel((current) => ({ ...current, roomId: room.id }));
+  };
 
   const goTo = (target) => {
     setSel(target);
@@ -217,10 +240,11 @@ export default function BuildingMap() {
                           </div>
                         )}
                         <button
-                          onClick={() => setSel({ tower: t.id, levelKey: l.key, roomId: null })}
+                          onClick={(event) => l.hasRooms ? selectFloor(event, t.id, l.key) : setSel({ tower: t.id, levelKey: l.key, roomId: null })}
+                          aria-pressed={l.hasRooms ? selectedFloors.has(floorId(t.id, l.key)) : undefined}
                           title={`${t.name} · ${l.label}`}
                           className={`flex h-[18px] w-full items-center gap-1.5 rounded px-1 ${
-                            isSel ? 'bg-gray-100 ring-1 ring-gray-400' : 'hover:bg-sand-100'
+                            selectedFloors.has(floorId(t.id, l.key)) ? 'bg-forest-50 ring-2 ring-forest-500' : isSel ? 'bg-gray-100 ring-1 ring-gray-400' : 'hover:bg-sand-100'
                           }`}
                         >
                           <span className="w-5 text-right font-mono text-[9px] text-ink-700/50">{l.short}</span>
@@ -231,8 +255,10 @@ export default function BuildingMap() {
                                   key={r.id}
                                   title={`${r.name} · ${r.type} · ${tenantByRoomId.get(r.id)?.name ?? 'Vacant'}`}
                                   className={`h-3 flex-1 rounded-[2px] ${dimmed(r) ? 'opacity-20' : ''} ${
-                                    sel.roomId === r.id
-                                      ? 'bg-ink-900'
+                                    maintenanceRoomIds.has(r.id)
+                                      ? 'bg-status-high'
+                                      : roomIsSelected(r)
+                                        ? 'bg-ink-900'
                                       : tenantByRoomId.has(r.id)
                                         ? 'bg-forest-500'
                                         : 'bg-gray-300'
@@ -257,6 +283,7 @@ export default function BuildingMap() {
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-gray-200" /> Sky lounge</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-gray-300" /> Lobby</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-gray-500" /> Parking</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-[2px] bg-status-high" /> Scheduled maintenance</span>
           </div>
         </Card>
 
@@ -270,6 +297,11 @@ export default function BuildingMap() {
                 <p className="text-xs text-ink-700/50">
                   {level.hasRooms ? `${rooms.length} rooms` : 'Open area · no rooms'}
                 </p>
+                {(selection.roomIds.length > 0 || selection.floorIds.length > 0) && (
+                  <button onClick={() => onSelectionChange({ roomIds: [], floorIds: [] })} className="mt-1 text-xs font-semibold text-forest-700 hover:underline">
+                    Clear {selection.floorIds.length} floor(s) and {selection.roomIds.length} room(s)
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -294,15 +326,19 @@ export default function BuildingMap() {
             {level.hasRooms ? (
               <div className={`grid gap-2.5 ${rooms.length <= 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 sm:grid-cols-5'}`}>
                 {rooms.map((r) => {
-                  const isSel = selRoom?.id === r.id;
+                  const isSel = roomIsSelected(r);
                   const occupant = tenantByRoomId.get(r.id);
+                  const hasMaintenance = maintenanceRoomIds.has(r.id);
                   return (
                     <button
                       key={r.id}
-                      onClick={() => setSel((s) => ({ ...s, roomId: r.id }))}
+                      onClick={(event) => selectRoom(event, r)}
+                      aria-pressed={isSel}
                       title={`${r.name} · ${r.type} · ${occupant ? occupant.name : 'Vacant'}`}
                       className={`flex flex-col items-start rounded-lg border p-2.5 text-left transition ${dimmed(r) ? 'opacity-25' : ''} ${
-                        occupant
+                        hasMaintenance
+                          ? 'border-status-high bg-status-highBg text-status-high'
+                          : occupant
                           ? 'border-forest-200 bg-forest-50 text-forest-800'
                           : 'border-gray-200 bg-gray-50 text-gray-700'
                       } ${isSel ? 'ring-2 ring-ink-700 ring-offset-1' : 'hover:shadow-card'}`}

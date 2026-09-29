@@ -38,7 +38,7 @@ public class AuthController {
     public MeResponse me() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof AuthenticatedUser user) {
-            return new MeResponse(user.email(), user.role());
+            return new MeResponse(user.email(), user.role(), user.mustChangePassword());
         }
         throw new ApiException(HttpStatus.UNAUTHORIZED, "You need to sign in to do that.");
     }

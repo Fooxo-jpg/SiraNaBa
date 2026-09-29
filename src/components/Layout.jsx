@@ -3,6 +3,7 @@ import AppShell from './AppShell.jsx';
 import PageHeader from './nav/PageHeader.jsx';
 import { useSession } from '../context/SessionContext.jsx';
 import { endpoints } from '../api/endpoints.js';
+import ForcedPasswordChangeModal from './ForcedPasswordChangeModal.jsx';
 
 export const NOTIFICATIONS_CHANGED = 'siranaba:notifications-changed';
 
@@ -56,6 +57,7 @@ export default function Layout({ crumb, children }) {
         profileTo="/settings"
       />
       {children}
+      <ForcedPasswordChangeModal />
     </AppShell>
   );
 }

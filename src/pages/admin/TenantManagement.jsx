@@ -13,21 +13,20 @@ import AuditExportModal from '../../components/admin/AuditExportModal.jsx';
 import AdminBillingPanel from '../../components/billing/AdminBillingPanel.jsx';
 import BillingDetails, { amountLabel } from '../../components/billing/BillingDetails.jsx';
 import { useTenantRegistry } from '../../context/TenantRegistryContext.jsx';
-import { TOWERS, UNIT_TYPES, RENT_BY_TYPE, ALL_ROOMS, levelByKey, roomById, vacantRooms } from '../../data/buildingData.js';
+import { UNIT_TYPES, RENT_BY_TYPE, ALL_ROOMS, levelByKey, roomById, vacantRooms } from '../../data/buildingData.js';
 
 const ACTIVITY_TONES = {
   success: 'bg-status-successBg text-status-success',
   progress: 'bg-status-progressBg text-status-progress',
 };
 
-// `type`, `tower` and `roomId` come from the building map (buildingData.js), so a
+// `type` and `roomId` come from the building map (buildingData.js), so a
 // tenant can only be assigned to a room that really exists and is still vacant.
 const todayISO = () => new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD
 
 const EMPTY_FORM = () => ({
   name: '',
   type: UNIT_TYPES[0],
-  tower: TOWERS[0].id,
   roomId: '',
   leaseStart: todayISO(),
   email: '',
@@ -188,10 +187,10 @@ export default function TenantManagement() {
     );
   }, [tenants, query, typeFilter, paymentFilter]);
 
-  // All vacant rooms in the selected building, grouped by floor for the dropdown.
+  // All vacant rooms in Main Building, grouped by floor for the dropdown.
   // The room itself determines its type and rent after it is selected.
   const vacantOptions = useMemo(() => {
-    const rooms = vacantRooms({ tower: form.tower, occupiedIds });
+    const rooms = vacantRooms({ occupiedIds });
     const groups = [];
     rooms.forEach((r) => {
       const label = levelByKey(r.levelKey).label;
@@ -201,11 +200,11 @@ export default function TenantManagement() {
     });
     // Lowest floor first reads more naturally in a dropdown than the map's top-down order.
     return { count: rooms.length, groups: groups.reverse() };
-  }, [form.type, form.tower, occupiedIds]);
+  }, [occupiedIds]);
 
   const openModal = (roomId = '') => {
     const room = roomById(roomId);
-    setForm(room ? { ...EMPTY_FORM(), type: room.type, tower: room.tower, roomId: room.id } : EMPTY_FORM());
+    setForm(room ? { ...EMPTY_FORM(), type: room.type, roomId: room.id } : EMPTY_FORM());
     setErrors({});
     setSubmitError('');
     setModalOpen(true);
@@ -246,9 +245,6 @@ export default function TenantManagement() {
         email: form.email.trim(),
         phone: form.phone.trim(),
         roomId: room.id,
-        tower: room.tower,
-        unit: room.number,
-        unitType: room.type,
         leaseStart: form.leaseStart,
       });
     } catch (err) {
@@ -256,9 +252,13 @@ export default function TenantManagement() {
       setSubmitting(false);
       return;
     }
+    // The account and room assignment are complete at this point. Email delivery
+    // continues separately so a slow SMTP server cannot hold this modal open.
     setSubmitting(false);
+    setModalOpen(false);
 
-    // The tenant now exists in the database; pull the fresh list (with its real ID).
+    // Pull the fresh list (with its real ID) so the tenant appears in the table
+    // and building map immediately.
     await reload();
     const tenant = {
       name: form.name.trim(),
@@ -273,7 +273,6 @@ export default function TenantManagement() {
       title: 'New Lease Registered',
       detail: `${tenant.name} (Main Building, Unit ${tenant.unit}) successfully onboarded. Lease starts ${formatDate(tenant.leaseStart + 'T00:00:00')}.`,
     });
-    setModalOpen(false);
     setNotice({
       tone: created.emailSent ? 'success' : 'warning',
       text: `${tenant.name}'s account was created with ${tenant.email}. ${created.emailMessage}`,
@@ -742,20 +741,7 @@ export default function TenantManagement() {
 
           <div>
             <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-ink-700/40">Location & Lease</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(8rem,1fr)_minmax(0,3fr)]">
-              <Field label="Building">
-                <select
-                  value={form.tower}
-                  onChange={(e) => setForm({ ...form, tower: Number(e.target.value), roomId: '' })}
-                  className={inputCls}
-                >
-                  {TOWERS.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+            <div className="grid grid-cols-1 gap-3">
               <Field
                 label="Assigned Unit"
                 error={errors.roomId}

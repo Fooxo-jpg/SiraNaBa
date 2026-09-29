@@ -3,6 +3,8 @@ package com.siranaba.backend.service;
 import com.siranaba.backend.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
+import java.util.List;
+
 /** Authoritative server-side layout for the single SiraNaBa building. */
 public final class BuildingCatalog {
     public static final int BUILDING_ID = 1;
@@ -31,6 +33,20 @@ public final class BuildingCatalog {
         int index = Integer.parseInt(normalized.substring(normalized.length() - 2));
         int floor = Integer.parseInt(normalized.substring(0, normalized.length() - 2));
         return parse("T1-" + String.format("%02d", floor) + "-" + String.format("%02d", index));
+    }
+
+    public static Room requireRoomId(String roomId) {
+        Room room = parse(roomId);
+        if (room == null) throw new ApiException(HttpStatus.BAD_REQUEST, "Choose valid residential rooms from the building map.");
+        return room;
+    }
+
+    public static List<String> roomIdsForFloor(String floorId) {
+        if (floorId == null || !floorId.matches("T1-(0[2-9]|1[0-2])"))
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Choose valid residential floors from the building map.");
+        return java.util.stream.IntStream.rangeClosed(1, 10)
+                .mapToObj(index -> floorId + "-" + String.format("%02d", index))
+                .toList();
     }
 
     static Room parse(String roomId) {

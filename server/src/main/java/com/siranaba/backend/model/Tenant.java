@@ -41,6 +41,7 @@ public class Tenant {
     private double monthlyRent;
     /** ISO date, e.g. "2026-10-01". */
     private String leaseStart;
+    private boolean generatedTestData;
 
     /** ISO date string, e.g. "2024-11-01" - matches the front end's formatDate helper. */
     private String rentDueDate;

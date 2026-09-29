@@ -57,7 +57,8 @@ class AdminBillingServiceTest {
         Billing b = ledger("5000", "2500"); setup(b);
         var users = mock(UserRepository.class); var notes = mock(NotificationRepository.class);
         var registration = new TenantRegistrationService(tenants, users, repository, notes,
-            mock(org.springframework.security.crypto.password.PasswordEncoder.class), mock(EmailService.class), mock(TenantCodeService.class), mock(AuditLogService.class), ledgerService);
+            mock(org.springframework.security.crypto.password.PasswordEncoder.class), mock(EmailService.class),
+            mock(WelcomeEmailDispatcher.class), mock(TenantCodeService.class), mock(AuditLogService.class), ledgerService);
         registration.remove("tenant-1");
         assertTrue(b.isArchived()); assertNotNull(b.getTenantSnapshot()); verify(repository, never()).deleteByTenantId(anyString());
         verify(users).deleteByTenantId("tenant-1"); verify(tenants).deleteById("tenant-1");

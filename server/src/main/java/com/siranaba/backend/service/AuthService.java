@@ -41,7 +41,7 @@ public class AuthService {
         String token = jwtService.generateToken(user.getId(), user.getEmail(), user.getTenantId(), rememberMe);
         cookieUtil.writeAuthCookie(response, token, rememberMe);
 
-        return new LoginResponse(token, user.getEmail(), user.getRole());
+        return new LoginResponse(token, user.getEmail(), user.getRole(), user.isMustChangePassword());
     }
 
     public void logout(HttpServletResponse response) {
@@ -64,6 +64,7 @@ public class AuthService {
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setMustChangePassword(false);
         userRepository.save(user);
     }
 }

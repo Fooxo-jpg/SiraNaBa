@@ -28,10 +28,21 @@ export default function Maintenance() {
       .catch(() => setStatus('error'));
   }, []);
 
+  const refreshTickets = useCallback(() => {
+    endpoints
+      .getTickets()
+      .then(({ tickets }) => setTickets(tickets))
+      .catch(() => {
+        // Keep the current table visible when a background refresh fails.
+        // The next polling cycle will try again.
+      });
+  }, []);
+
   useEffect(() => { load(); }, [load]);
   // The server processes Gemini triage in a rate-limited queue. Refresh this
-  // shared ticket state so Loading... changes to the final severity in-place.
-  useAutoRefresh(load);
+  // ticket state so Loading... changes to the final severity in-place without
+  // replacing the whole page with the initial loading screen.
+  useAutoRefresh(refreshTickets);
 
   const activeTickets = useMemo(() => tickets.filter((ticket) => !['Resolved', 'Cancelled'].includes(ticket.stage)), [tickets]);
   const archivedTickets = useMemo(() => tickets.filter((ticket) => ticket.stage === 'Resolved'), [tickets]);
