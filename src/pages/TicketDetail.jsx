@@ -92,6 +92,9 @@ export default function TicketDetail() {
               <p className="mt-0.5 text-sm text-ink-700/60">{ticket.title}</p>
             </div>
             <div className="flex items-center gap-2">
+              <button type="button" onClick={() => window.print()} className="print:hidden flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-sand-100">
+                <Icon name="fileText" size={14} /> Print Ticket
+              </button>
               {isLive && (
                 <span className="flex items-center gap-1.5 rounded-full bg-status-successBg px-3 py-1 text-xs font-semibold text-status-success">
                   <span className="h-1.5 w-1.5 rounded-full bg-status-success" /> Live: {ticket.stage}

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Card from '../Card.jsx';
 import Icon from '../Icon.jsx';
 import StatusBadge from '../StatusBadge.jsx';
+import Modal from '../Modal.jsx';
 import { useTenantRegistry } from '../../context/TenantRegistryContext.jsx';
 import { formatPhp, formatDate } from '../../utils/format.js';
 import { TOWERS, LEVELS, ALL_ROOMS, UNIT_TYPES, RENT_BY_TYPE, levelByKey, roomsOn } from '../../data/buildingData.js';
@@ -35,11 +36,12 @@ const OPEN_BAR_COLOR = {
   parking: 'bg-gray-500',
 };
 
-export default function BuildingMap({ selection = { roomIds: [], floorIds: [] }, onSelectionChange = () => {}, maintenanceRoomIds = new Set() }) {
+export default function BuildingMap({ selection = { roomIds: [], floorIds: [] }, onSelectionChange = () => {}, maintenanceRoomIds = new Set(), maintenanceSchedules = [] }) {
   const [sel, setSel] = useState({ tower: 1, levelKey: '02', roomId: null });
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [typeFilter, setTypeFilter] = useState(null);
+  const [historyRoom, setHistoryRoom] = useState(null);
   const navigate = useNavigate();
   const { tenantByRoomId } = useTenantRegistry();
   // Only tenants assigned to a room on this map (the registry can also hold tenants with no room yet).
@@ -396,6 +398,7 @@ export default function BuildingMap({ selection = { roomIds: [], floorIds: [] },
                   </dl>
 
                   <div className="mt-4 border-t border-black/5 pt-4">
+                    <button type="button" onClick={() => setHistoryRoom(selRoom)} className="mb-3 flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-semibold text-forest-700 hover:bg-forest-50"><Icon name="history" size={13} /> Maintenance history</button>
                     {selTenant ? (
                       <>
                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -455,6 +458,9 @@ export default function BuildingMap({ selection = { roomIds: [], floorIds: [] },
 
         </div>
       </div>
+      <Modal open={!!historyRoom} onClose={() => setHistoryRoom(null)} title={`${historyRoom?.name || 'Room'} maintenance history`}>
+        {maintenanceSchedules.filter((schedule) => schedule.affectedRoomIds?.includes(historyRoom?.id)).length === 0 ? <p className="py-6 text-center text-sm text-ink-700/50">No scheduled maintenance records for this room.</p> : <ul className="space-y-3">{maintenanceSchedules.filter((schedule) => schedule.affectedRoomIds?.includes(historyRoom?.id)).map((schedule) => <li key={schedule.id} className="rounded-lg border border-black/10 p-3"><div className="flex justify-between gap-3"><p className="font-semibold text-ink-900">{schedule.reason}</p><StatusBadge label={schedule.status} /></div><p className="mt-1 text-xs text-ink-700/60">{new Date(schedule.scheduledAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}</p></li>)}</ul>}
+      </Modal>
     </div>
   );
 }

@@ -92,6 +92,8 @@ export default function TenantManagement() {
   const [submitError, setSubmitError] = useState('');
   // { tone: 'success' | 'warning' | 'error', text } shown above the stats.
   const [notice, setNotice] = useState(null);
+  const [moveOutTarget, setMoveOutTarget] = useState(null);
+  const [movingOut, setMovingOut] = useState(false);
 
   // Edit Details modal: which tenant is being edited, plus its form state.
   const [editTarget, setEditTarget] = useState(null);
@@ -282,15 +284,19 @@ export default function TenantManagement() {
   const markPaid = (t) => { setMenuId(null); setBillTarget(t); };
 
   const removeTenant = async (t) => {
-    setMenuId(null);
+    setMovingOut(true);
     // Deletes the tenant record and their login, so the unit can be assigned again.
     try {
       await endpoints.removeTenantAccount(t.accountId);
     } catch (err) {
       setNotice({ tone: 'error', text: `Couldn't remove ${t.name}: ${err.message}` });
+      setMovingOut(false);
       return;
     }
     await reload();
+    setMovingOut(false);
+    setMoveOutTarget(null);
+    setNotice({ tone: 'success', text: `${t.name} has been moved out. The unit is vacant and financial history remains archived.` });
     pushActivity({ icon: 'trash', tone: 'progress', title: 'Tenant Removed', detail: `${t.name} left Main Building, Unit ${t.unit}. The unit is vacant again.` });
   };
 
@@ -524,8 +530,8 @@ export default function TenantManagement() {
                                 <Icon name="check" size={14} /> Record Payment
                               </button>
                             )}
-                            <button onClick={() => removeTenant(t)} className="flex w-full items-center gap-2 px-3 py-2 text-sm text-status-high hover:bg-status-highBg">
-                              <Icon name="trash" size={14} /> Remove Tenant
+                            <button onClick={() => { setMenuId(null); setMoveOutTarget(t); }} className="flex w-full items-center gap-2 px-3 py-2 text-sm text-status-high hover:bg-status-highBg">
+                              <Icon name="logout" size={14} /> Start Move-out
                             </button>
                           </div>
                         </>
@@ -705,7 +711,7 @@ export default function TenantManagement() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Register New Tenant"
+        title="Tenant Move-in"
         maxWidth="max-w-2xl"
         footer={
           <>
@@ -718,7 +724,7 @@ export default function TenantManagement() {
               disabled={submitting}
               className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:opacity-60"
             >
-              {submitting ? 'Registering…' : 'Authorize Registration'}
+              {submitting ? 'Completing move-in…' : 'Complete Move-in'}
             </button>
           </>
         }
@@ -810,6 +816,9 @@ export default function TenantManagement() {
             </p>
           )}
         </form>
+      </Modal>
+      <Modal open={!!moveOutTarget} onClose={() => { if (!movingOut) setMoveOutTarget(null); }} title="Confirm tenant move-out" footer={<><button type="button" disabled={movingOut} onClick={() => setMoveOutTarget(null)} className="rounded-md border border-black/10 px-4 py-2 text-sm font-medium">Keep Tenant</button><button type="button" disabled={movingOut} onClick={() => removeTenant(moveOutTarget)} className="rounded-md bg-status-high px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{movingOut ? 'Moving out…' : 'Confirm Move-out'}</button></>}>
+        <p className="text-sm text-ink-700/70"><strong>{moveOutTarget?.name}</strong> will lose portal access and Unit {moveOutTarget?.unit} will become vacant. Their billing history will be archived for audit purposes.</p>
       </Modal>
     </AdminLayout>
   );

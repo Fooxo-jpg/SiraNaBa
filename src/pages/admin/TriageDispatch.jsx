@@ -31,11 +31,11 @@ function formatTowerRoom(location) {
 }
 
 export default function TriageDispatch() {
-  const technicians = []; // TODO: load from the staff API
   const [tickets, setTickets] = useState([]);
   const [ticketsError, setTicketsError] = useState('');
   const [ticketsLoaded, setTicketsLoaded] = useState(false);
   const [staff, setStaff] = useState(null);
+  const technicians = staff || [];
   const [staffError, setStaffError] = useState('');
   const [tenants, setTenants] = useState([]);
   const loadStaff = useCallback(async () => {
@@ -106,6 +106,9 @@ export default function TriageDispatch() {
   const [tab, setTab] = useState('pending');
   const [query, setQuery] = useState('');
   const [assignModal, setAssignModal] = useState(null); // ticket object
+  const [assignStaffId, setAssignStaffId] = useState('');
+  const [assigning, setAssigning] = useState(false);
+  const [activityTicket, setActivityTicket] = useState(null);
   const [quickDispatchOpen, setQuickDispatchOpen] = useState(false);
   const [unassignedTickets, setUnassignedTickets] = useState([]);
   const [dispatchStaff, setDispatchStaff] = useState([]);
@@ -142,6 +145,22 @@ export default function TriageDispatch() {
       setDispatchError(error.message || 'Could not assign this ticket. It may have just been assigned elsewhere.');
     } finally {
       setDispatchingTicketId(null);
+    }
+  };
+
+  const assignTechnician = async () => {
+    if (!assignModal || !assignStaffId || assigning) return;
+    setAssigning(true);
+    setTicketsError('');
+    try {
+      const updated = await endpoints.assignAdminTicket(assignModal.id, assignStaffId);
+      setTickets((current) => current.map((item) => (item.id === assignModal.id ? updated : item)));
+      setAssignModal(null);
+      setAssignStaffId('');
+    } catch (error) {
+      setTicketsError(error.message || "Couldn't assign the technician.");
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -277,7 +296,7 @@ export default function TriageDispatch() {
                   <tbody className="divide-y divide-black/5">
                     {visibleTickets.map((t) => (
                       <tr key={t.id}>
-                        <td className="py-3 pr-3 align-top font-mono text-xs font-semibold text-ink-700/60">{t.id}</td>
+                        <td className="py-3 pr-3 align-top"><button type="button" onClick={() => setActivityTicket(t)} className="font-mono text-xs font-semibold text-forest-700 hover:underline" title="View ticket activity and staff assignment history">{t.id}</button></td>
                         <td className="py-3 pr-3 align-top">
                           <p className="font-semibold text-ink-900">{t.title}</p>
                           <p className="text-xs text-ink-700/50">{t.location}</p>
@@ -308,7 +327,7 @@ export default function TriageDispatch() {
                             </span>
                           ) : (
                             <button
-                              onClick={() => setAssignModal(t)}
+                              onClick={() => { setAssignModal(t); setAssignStaffId(''); }}
                               className="rounded-md border border-black/10 px-2.5 py-1 text-xs font-semibold text-forest-600 hover:bg-forest-50"
                             >
                               Assign Tech
@@ -472,22 +491,23 @@ export default function TriageDispatch() {
 
       <Modal
         open={!!assignModal}
-        onClose={() => setAssignModal(null)}
+        onClose={() => { if (!assigning) { setAssignModal(null); setAssignStaffId(''); } }}
         title={`Assign Technician — ${assignModal?.id || ''}`}
         footer={
           <>
             <button
-              onClick={() => setAssignModal(null)}
+              onClick={() => { setAssignModal(null); setAssignStaffId(''); }}
+              disabled={assigning}
               className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100"
             >
               Cancel
             </button>
             <button
-              onClick={() => setAssignModal(null)}
-              disabled={technicians.length === 0}
+              onClick={assignTechnician}
+              disabled={technicians.length === 0 || !assignStaffId || assigning}
               className="rounded-md bg-forest-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Assign
+              {assigning ? 'Assigning…' : 'Assign'}
             </button>
           </>
         }
@@ -499,16 +519,23 @@ export default function TriageDispatch() {
           </span>
           <select
             disabled={technicians.length === 0}
+            value={assignStaffId}
+            onChange={(event) => setAssignStaffId(event.target.value)}
             className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-forest-400 disabled:bg-sand-50"
           >
+            {technicians.length > 0 && <option value="">Select a technician…</option>}
             {technicians.length === 0 && <option>No technicians available</option>}
             {technicians.map((t) => (
-              <option key={t.id}>
+              <option key={t.id} value={t.id}>
                 {t.name} — {t.specialty}
               </option>
             ))}
           </select>
         </label>
+      </Modal>
+      <Modal open={!!activityTicket} onClose={() => setActivityTicket(null)} title={`Ticket activity — ${activityTicket?.id || ''}`}>
+        <p className="mb-4 text-sm font-semibold text-ink-900">{activityTicket?.title}</p>
+        {activityTicket?.timeline?.length ? <ol className="space-y-4 border-l-2 border-forest-100 pl-5">{[...activityTicket.timeline].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).map((event) => <li key={event.id} className="relative"><span className="absolute -left-[1.65rem] top-1 h-3 w-3 rounded-full border-2 border-white bg-forest-500" /><p className="text-sm font-semibold text-ink-900">{event.title}</p><p className="text-xs text-ink-700/60">{event.detail}</p><time className="mt-1 block text-[11px] text-ink-700/40">{new Date(event.timestamp).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}</time></li>)}</ol> : <p className="py-6 text-center text-sm text-ink-700/50">No activity has been recorded.</p>}
       </Modal>
     </AdminLayout>
   );

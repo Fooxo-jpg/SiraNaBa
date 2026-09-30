@@ -1,10 +1,11 @@
 import React from 'react';
 import Icon from '../Icon.jsx';
-
-// TODO: replace with the signed-in admin from SessionContext.
-const adminUser = { name: 'Administrator', role: '—' };
+import { useSession } from '../../context/SessionContext.jsx';
 
 export default function AdminTopbar({ crumb, onOpenMenu, unreadCount = 0 }) {
+  const { user } = useSession();
+  const adminName = user?.email || 'Loading…';
+
   return (
     <header className="flex items-center gap-3 border-b border-black/5 bg-white px-4 py-3 lg:px-6">
       <button
@@ -55,8 +56,8 @@ export default function AdminTopbar({ crumb, onOpenMenu, unreadCount = 0 }) {
             <Icon name="eye" size={15} />
           </div>
           <div className="hidden leading-tight sm:block">
-            <p className="text-sm font-semibold text-ink-900">{adminUser.name}</p>
-            <p className="text-xs text-ink-700/50">Admin Portal</p>
+            <p className="max-w-52 truncate text-sm font-semibold text-ink-900">{adminName}</p>
+            <p className="text-xs text-ink-700/50">Administrator</p>
           </div>
         </div>
       </div>

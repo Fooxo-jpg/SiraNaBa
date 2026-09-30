@@ -5,6 +5,7 @@ import Card from '../components/Card.jsx';
 import Icon from '../components/Icon.jsx';
 import AttachmentGrid from '../components/AttachmentGrid.jsx';
 import { endpoints } from '../api/endpoints.js';
+import { useToast } from '../context/ToastContext.jsx';
 
 const STEPS = ['Details', 'Location', 'Review'];
 
@@ -18,15 +19,28 @@ const initialForm = {
 
 export default function SubmitRequest() {
   const navigate = useNavigate();
+  const { notify } = useToast();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(initialForm);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [categories, setCategories] = useState([]);
+  const [submitError, setSubmitError] = useState('');
+  const dirty = Object.values(form).some((value) => Array.isArray(value) ? value.length > 0 : String(value).trim());
 
   useEffect(() => {
     endpoints.getTicketCategories().then(setCategories).catch(() => setCategories([]));
   }, []);
+
+  useEffect(() => {
+    const warn = (event) => { if (dirty && !submitting) { event.preventDefault(); event.returnValue = ''; } };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty, submitting]);
+
+  const cancel = () => {
+    if (!dirty || window.confirm('Discard this unsaved maintenance ticket? Your entries and attachments will be lost.')) navigate('/maintenance');
+  };
 
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
@@ -56,7 +70,7 @@ export default function SubmitRequest() {
   const goBack = () => setStep((s) => Math.max(s - 1, 0));
 
   const submit = async () => {
-    setSubmitting(true);
+    setSubmitting(true); setSubmitError('');
     try {
       await endpoints.createTicket({
         category: form.category,
@@ -70,7 +84,11 @@ export default function SubmitRequest() {
           dataUrl,
         })),
       });
+      notify('Maintenance ticket submitted successfully.', { action: { label: 'View tickets', onClick: () => navigate('/maintenance') } });
       navigate('/maintenance');
+    } catch (error) {
+      setSubmitError(error.message || 'The ticket could not be submitted. Check your connection and try again.');
+      notify(error.message || 'The ticket could not be submitted.', { tone: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -247,7 +265,7 @@ export default function SubmitRequest() {
             </button>
             <div className="flex gap-3">
               <button
-                onClick={() => navigate('/maintenance')}
+                onClick={cancel}
                 className="rounded-md border border-black/10 px-4 py-2 text-sm font-medium hover:bg-sand-100"
               >
                 Cancel
@@ -270,6 +288,7 @@ export default function SubmitRequest() {
               )}
             </div>
           </div>
+          {submitError && <div role="alert" className="mt-4 flex items-center justify-between gap-3 rounded-md bg-status-highBg p-3 text-sm text-status-high"><span>{submitError}</span><button type="button" onClick={submit} disabled={submitting} className="shrink-0 font-semibold underline">Retry</button></div>}
         </Card>
 
         <Card className="mt-5 flex items-start gap-3 p-5">

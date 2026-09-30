@@ -15,6 +15,8 @@ export default function Maintenance() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('loading');
   const [historyView, setHistoryView] = useState(false);
+  const [calendarView, setCalendarView] = useState(false);
+  const [schedules, setSchedules] = useState([]);
 
   const load = useCallback(() => {
     setStatus('loading');
@@ -38,7 +40,10 @@ export default function Maintenance() {
       });
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    endpoints.getTenantMaintenanceSchedules().then(setSchedules).catch(() => setSchedules([]));
+  }, [load]);
   // The server processes Gemini triage in a rate-limited queue. Refresh this
   // ticket state so Loading... changes to the final severity in-place without
   // replacing the whole page with the initial loading screen.
@@ -54,6 +59,14 @@ export default function Maintenance() {
       ),
     [activeTickets, archivedTickets, cancelledTickets, query, historyView]
   );
+  const completedDurations = useMemo(() => archivedTickets.map((ticket) => {
+    const completed = (ticket.timeline || []).find((event) => event.title === 'Fixed Problem')?.timestamp || ticket.updatedAt;
+    const start = new Date(ticket.submittedAt).getTime(), end = new Date(completed).getTime();
+    return Number.isFinite(start) && Number.isFinite(end) && end >= start ? (end - start) / 36e5 : null;
+  }).filter((value) => value != null), [archivedTickets]);
+  const averageFixHours = completedDurations.length
+    ? Math.round(completedDurations.reduce((sum, value) => sum + value, 0) / completedDurations.length)
+    : null;
 
   return (
     <Layout crumb="Maintenance">
@@ -70,8 +83,11 @@ export default function Maintenance() {
               </p>
             </div>
             <div className="flex gap-3">
+              <button onClick={() => setCalendarView((value) => !value)} className="flex items-center gap-1.5 rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100">
+                <Icon name="calendar" size={15} /> {calendarView ? 'Hide Calendar' : 'Calendar'}
+              </button>
               <button onClick={() => setHistoryView((value) => !value)} className="rounded-md border border-black/10 px-3.5 py-2 text-sm font-medium hover:bg-sand-100">
-                {historyView ? 'Active Requests' : 'Ticket History'}
+                <span className="flex items-center gap-1.5"><Icon name="history" size={15} />{historyView ? 'Active Requests' : 'Ticket History'}</span>
               </button>
               <Link
                 to="/maintenance/new"
@@ -81,6 +97,16 @@ export default function Maintenance() {
               </Link>
             </div>
           </div>
+
+          {calendarView && <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold text-ink-900">Maintenance Calendar</h2><p className="text-xs text-ink-700/50">Upcoming building work affecting your unit.</p></div><span className="rounded-full bg-status-highBg px-2 py-1 text-xs font-semibold text-status-high">{schedules.length} upcoming</span></div>
+            {schedules.length === 0 ? <p className="rounded-lg border border-dashed border-black/10 p-6 text-center text-sm text-ink-700/50">No maintenance is scheduled for your unit.</p> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{schedules.map((schedule) => {
+              const date = new Date(schedule.scheduledAt);
+              return <div key={schedule.id} className="rounded-lg border border-status-high/20 bg-status-highBg p-4"><p className="text-xs font-bold uppercase text-status-high">{date.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' })}</p><p className="mt-1 font-semibold text-ink-900">{date.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' })}</p><p className="mt-2 text-sm text-ink-700/70">{schedule.reason}</p></div>;
+            })}</div>}
+          </Card>}
+
+          {schedules.length > 0 && !calendarView && <button onClick={() => setCalendarView(true)} className="flex w-full items-center gap-3 rounded-lg border border-status-high/20 bg-status-highBg p-4 text-left text-sm text-status-high"><Icon name="bell" size={18} /><span><strong>Upcoming maintenance:</strong> {new Date(schedules[0].scheduledAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} — {schedules[0].reason}</span></button>}
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             {/* Ticket list */}
@@ -169,12 +195,9 @@ export default function Maintenance() {
 
               <Card className="p-5">
                 <p className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-ink-900">
-                  <Icon name="info" size={15} className="text-forest-600" /> Tip
+                  <Icon name="trend" size={15} className="text-forest-600" /> Your Maintenance Report
                 </p>
-                <p className="text-xs leading-relaxed text-ink-700/60">
-                  Click any ticket to see its live status, assigned technician, and full activity
-                  log.
-                </p>
+                <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between"><dt className="text-ink-700/60">Average repair duration</dt><dd className="font-semibold">{averageFixHours == null ? 'No completed tickets' : `${averageFixHours}h`}</dd></div><div className="flex justify-between"><dt className="text-ink-700/60">Completed requests</dt><dd className="font-semibold">{archivedTickets.length}</dd></div><div className="flex justify-between"><dt className="text-ink-700/60">Currently active</dt><dd className="font-semibold">{activeTickets.length}</dd></div><div className="flex justify-between"><dt className="text-ink-700/60">Resolution rate</dt><dd className="font-semibold">{tickets.length ? `${Math.round((archivedTickets.length / tickets.length) * 100)}%` : '—'}</dd></div></dl>
               </Card>
             </div>
           </div>

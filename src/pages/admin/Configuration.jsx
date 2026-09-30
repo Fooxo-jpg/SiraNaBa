@@ -7,6 +7,7 @@ import Icon from '../../components/Icon.jsx';
 import { endpoints } from '../../api/endpoints.js';
 import { useAutoRefresh } from '../../utils/useAutoRefresh.js';
 import { formatBytes, formatDuration, formatRelativeTime } from '../../utils/format.js';
+import { useToast } from '../../context/ToastContext.jsx';
 
 const TABS = [
   { id: 'logs', label: 'System Logs', icon: 'grid' },
@@ -122,22 +123,31 @@ const DEFAULT_TEST_FORM = {
 };
 
 function TestingDataPanel({ disabled, onGenerated }) {
+  const { notify } = useToast();
   const [form, setForm] = useState(DEFAULT_TEST_FORM);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
-  const number = (field) => (event) => setForm((current) => ({ ...current, [field]: Number(event.target.value) }));
-  const toggle = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.checked }));
+  const [preview, setPreview] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const number = (field) => (event) => { setPreview(false); setForm((current) => ({ ...current, [field]: Number(event.target.value) })); };
+  const toggle = (field) => (event) => { setPreview(false); setForm((current) => ({ ...current, [field]: event.target.checked })); };
 
   const generate = async (event) => {
-    event.preventDefault(); setGenerating(true); setError(''); setResult(null);
+    event.preventDefault();
+    if (!preview) { setPreview(true); setError(''); return; }
+    setGenerating(true); setProgress(8); setError(''); setResult(null);
+    const timer = window.setInterval(() => setProgress((value) => Math.min(value + Math.max(2, Math.round((90 - value) / 5)), 90)), 450);
     try {
       const created = await endpoints.generateTestData(form);
+      setProgress(100);
       setResult(created);
+      notify(`Generated ${created.tenantsCreated} tenants, ${created.staffCreated} staff, and ${created.ticketsCreated} tickets.`);
       await onGenerated();
     } catch (err) {
       setError(err.message || "Couldn't generate test data.");
-    } finally { setGenerating(false); }
+      notify(err.message || "Couldn't generate test data.", { tone: 'error' });
+    } finally { window.clearInterval(timer); setGenerating(false); }
   };
 
   return (
@@ -191,6 +201,8 @@ function TestingDataPanel({ disabled, onGenerated }) {
         <div className="rounded-md bg-status-progressBg p-3 text-xs text-status-progress">
           Dummy tenant emails use the reserved <strong>example.test</strong> domain. They work as portal usernames but do not send mail to real people. Every generated tenant uses the shared password shown after generation.
         </div>
+        {preview && !generating && !result && <div className="rounded-lg border border-forest-200 bg-forest-50 p-4 text-sm"><p className="font-semibold text-forest-800">Generation preview</p><ul className="mt-2 space-y-1 text-ink-700/70"><li>{form.tenantCount} tenant account(s) in vacant units</li><li>{form.staffCount} maintenance staff record(s)</li><li>{form.createTickets ? `${form.minTicketsPerTenant}–${form.maxTicketsPerTenant} tickets per tenant (${form.tenantCount * form.minTicketsPerTenant}–${form.tenantCount * form.maxTicketsPerTenant} total)` : 'No tickets'}</li><li>{form.createNotifications ? `${form.tenantCount} welcome notification(s)` : 'No welcome notifications'}</li><li>{form.replaceGeneratedData ? 'Previously generated test records will be removed first' : 'Existing generated records will be kept'}</li></ul><p className="mt-3 text-xs font-semibold text-forest-700">Review these values, then confirm generation below.</p></div>}
+        {generating && <div role="status" aria-live="polite"><div className="mb-1 flex justify-between text-xs font-semibold text-ink-700/60"><span>{progress < 25 ? 'Preparing records…' : progress < 60 ? 'Creating accounts and staff…' : progress < 95 ? 'Creating tickets and notifications…' : 'Finalizing…'}</span><span>{progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-black/10"><div className="h-full rounded-full bg-forest-500 transition-all" style={{ width: `${progress}%` }} /></div></div>}
         {error && <p role="alert" className="rounded-md bg-status-highBg p-3 text-sm text-status-high">{error}</p>}
         {result && (
           <div role="status" className="rounded-lg border border-status-success/20 bg-status-successBg p-4 text-sm text-ink-900">
@@ -202,7 +214,7 @@ function TestingDataPanel({ disabled, onGenerated }) {
           </div>
         )}
         <button type="submit" disabled={disabled || generating || (form.tenantCount === 0 && form.staffCount === 0)} className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600 disabled:opacity-50">
-          {generating ? 'Generating…' : 'Generate testing data'}
+          {generating ? 'Generating…' : preview ? 'Confirm and generate' : 'Preview generation'}
         </button>
       </form>
     </Card>

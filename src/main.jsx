@@ -4,15 +4,16 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { SessionProvider } from './context/SessionContext.jsx';
 import { TenantRegistryProvider } from './context/TenantRegistryContext.jsx';
+import { ToastProvider } from './context/ToastContext.jsx';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <SessionProvider>
-        <TenantRegistryProvider>
+        <ToastProvider><TenantRegistryProvider>
           <App />
-        </TenantRegistryProvider>
+        </TenantRegistryProvider></ToastProvider>
       </SessionProvider>
     </BrowserRouter>
   </React.StrictMode>

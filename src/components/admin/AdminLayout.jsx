@@ -1,9 +1,7 @@
 import React from 'react';
 import AppShell from '../AppShell.jsx';
 import PageHeader from '../nav/PageHeader.jsx';
-
-// TODO: replace with the signed-in admin from SessionContext.
-const adminUser = { name: 'Administrator', role: '—' };
+import { useSession } from '../../context/SessionContext.jsx';
 
 const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', icon: 'grid', end: true },
@@ -15,11 +13,14 @@ const NAV_ITEMS = [
 ];
 
 export default function AdminLayout({ crumb, children }) {
+  const { user } = useSession();
+  const email = user?.email || 'Loading…';
+
   return (
     <AppShell navItems={NAV_ITEMS} brandIcon="homeCheck">
       <PageHeader
         crumb={crumb}
-        user={{ name: adminUser.name, sub: 'Admin Portal' }}
+        user={{ initials: email === 'Loading…' ? '··' : email.charAt(0).toUpperCase(), name: email, sub: 'Administrator' }}
         searchPlaceholder="Search systems, tenants..."
       />
       {children}

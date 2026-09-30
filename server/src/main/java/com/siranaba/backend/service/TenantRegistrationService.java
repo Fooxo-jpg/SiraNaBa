@@ -34,12 +34,14 @@ public class TenantRegistrationService {
     private final TenantCodeService tenantCodeService;
     private final AuditLogService auditLogService;
     private final BillingLedgerService ledger;
+    private final FacilityMaintenanceScheduleRepository maintenanceSchedules;
 
     public TenantRegistrationService(TenantRepository tenantRepository, UserRepository userRepository,
                                      BillingRepository billingRepository, NotificationRepository notificationRepository,
                                      PasswordEncoder passwordEncoder, EmailService emailService,
                                      WelcomeEmailDispatcher welcomeEmailDispatcher, TenantCodeService tenantCodeService,
-                                     AuditLogService auditLogService, BillingLedgerService ledger) {
+                                     AuditLogService auditLogService, BillingLedgerService ledger,
+                                     FacilityMaintenanceScheduleRepository maintenanceSchedules) {
         this.tenantRepository = tenantRepository;
         this.userRepository = userRepository;
         this.billingRepository = billingRepository;
@@ -50,6 +52,7 @@ public class TenantRegistrationService {
         this.tenantCodeService = tenantCodeService;
         this.auditLogService = auditLogService;
         this.ledger = ledger;
+        this.maintenanceSchedules = maintenanceSchedules;
     }
 
     public RegisterTenantResponse register(RegisterTenantRequest req) {
@@ -118,6 +121,23 @@ public class TenantRegistrationService {
             welcome.setTimestamp(Instant.now());
             welcome.setCta(new Cta("Review my account", "/settings"));
             notificationRepository.save(welcome);
+
+            Tenant registeredTenant = tenant;
+            maintenanceSchedules.findByStatusAndScheduledAtAfterOrderByScheduledAtAsc("Scheduled", Instant.now()).stream()
+                    .filter(schedule -> schedule.getAffectedRoomIds().contains(registeredTenant.getRoomId()))
+                    .forEach(schedule -> {
+                        NotificationDoc notice = new NotificationDoc();
+                        notice.setId("facility-maintenance-" + schedule.getId() + "-" + registeredTenant.getId());
+                        notice.setTenantId(registeredTenant.getId());
+                        notice.setCategory("Maintenance");
+                        notice.setTitle("Upcoming maintenance for your unit");
+                        notice.setBody("Maintenance is scheduled for " + schedule.getScheduledAt()
+                                + ". Reason: " + schedule.getReason());
+                        notice.setTimestamp(Instant.now());
+                        notice.setCta(new Cta("View maintenance calendar", "/maintenance"));
+                        notice.setRead(false);
+                        notificationRepository.save(notice);
+                    });
         } catch (RuntimeException ex) {
             // Don't leave a tenant with no login behind (e.g. duplicate-email race).
             removeTenantData(tenant.getId());

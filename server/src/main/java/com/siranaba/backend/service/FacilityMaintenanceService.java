@@ -41,6 +41,11 @@ public class FacilityMaintenanceService {
                 .stream().map(this::response).toList();
     }
 
+    public List<FacilityMaintenanceResponse> listForRoom(String roomId) {
+        return schedules.findByStatusAndScheduledAtAfterOrderByScheduledAtAsc("Scheduled", Instant.now())
+                .stream().filter(value -> value.getAffectedRoomIds().contains(roomId)).map(this::response).toList();
+    }
+
     public FacilityMaintenanceResponse create(CreateFacilityMaintenanceRequest request) {
         LinkedHashSet<String> selectedRooms = new LinkedHashSet<>(safe(request.roomIds()));
         LinkedHashSet<String> selectedFloors = new LinkedHashSet<>(safe(request.floorIds()));

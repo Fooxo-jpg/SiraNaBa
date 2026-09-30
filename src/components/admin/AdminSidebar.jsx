@@ -4,9 +4,6 @@ import Icon from '../Icon.jsx';
 import { useSession } from '../../context/SessionContext.jsx';
 import { endpoints } from '../../api/endpoints.js';
 
-// TODO: replace with the signed-in admin from SessionContext.
-const adminUser = { name: 'Administrator', role: '—' };
-
 const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', icon: 'grid', end: true },
   { to: '/admin/triage', label: 'Triage & Dispatch', icon: 'ticket' },
@@ -67,6 +64,9 @@ function SignOutButton({ onNavigate }) {
 }
 
 function SidebarContent({ onNavigate }) {
+  const { user } = useSession();
+  const adminName = user?.email || 'Loading…';
+
   return (
     <div className="flex h-full w-full flex-col justify-between">
       <div>
@@ -89,8 +89,8 @@ function SidebarContent({ onNavigate }) {
             <Icon name="eye" size={16} />
           </div>
           <div className="min-w-0 flex flex-col justify-center">
-            <p className="truncate text-sm font-semibold text-ink-900 leading-tight">{adminUser.name}</p>
-            <p className="truncate text-xs text-ink-700/60 leading-tight">{adminUser.role}</p>
+            <p className="truncate text-sm font-semibold leading-tight text-ink-900">{adminName}</p>
+            <p className="truncate text-xs leading-tight text-ink-700/60">Administrator</p>
           </div>
         </div>
         <div className="flex flex-col gap-1">

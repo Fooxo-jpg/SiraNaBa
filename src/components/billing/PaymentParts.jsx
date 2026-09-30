@@ -524,11 +524,12 @@ export function ReceiptModal({ receipt, onClose }) {
   ];
 
   return (
-    <Modal open onClose={onClose} title={receipt.simulated ? 'Simulated Payment Receipt' : 'Payment Receipt'} footer={
+    <Modal open onClose={onClose} title={receipt.simulated ? 'Simulated Payment Receipt' : 'Payment Receipt'} footer={<>
+      <button onClick={() => window.print()} className="print:hidden rounded-md border border-black/10 px-4 py-2 text-sm font-semibold hover:bg-sand-100">Print Receipt</button>
       <button onClick={onClose} className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-600">
         Done
       </button>
-    }>
+    </>}>
       <div className="mb-5 flex flex-col items-center text-center">
         <span className={`mb-2 flex h-12 w-12 items-center justify-center rounded-full ${failed ? 'bg-status-highBg text-status-high' : 'bg-status-successBg text-status-success'}`}>
           <Icon name={failed ? 'alert' : 'check'} size={24} strokeWidth={2.4} />

@@ -23,6 +23,7 @@ export default function Billing() {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-2xl font-bold">Billing &amp; Payments</h1><p className="text-sm text-ink-700/60">Rent, itemized utilities, and allocated payment history.</p></div>
       <div className="flex flex-wrap gap-2">
+        <button onClick={() => window.print()} disabled={!billing} className="print:hidden rounded-md border border-black/10 px-3 py-2 text-sm disabled:opacity-50">Print Statement</button>
         <button onClick={() => setModal('methods')} className="rounded-md border border-black/10 px-3 py-2 text-sm">Payment Methods</button>
         <button onClick={() => setModal('pay')} disabled={!billing || billing.reconciliationRequired || Number(billing.totalOutstanding) <= 0}
           className="rounded-md bg-forest-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Make a Payment</button>

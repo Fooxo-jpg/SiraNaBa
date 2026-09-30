@@ -197,7 +197,7 @@ export default function IoTEmergency() {
                 </Card>
               </>
             ) : tab === 'Map View' ? (
-              <BuildingMap selection={selection} onSelectionChange={setSelection} maintenanceRoomIds={maintenanceRoomIds} />
+              <BuildingMap selection={selection} onSelectionChange={setSelection} maintenanceRoomIds={maintenanceRoomIds} maintenanceSchedules={schedules} />
             ) : (
               <Card className="flex flex-col items-center justify-center gap-2 p-16 text-center text-sm text-ink-700/50">
                 <Icon name="info" size={18} className="text-ink-700/30" />

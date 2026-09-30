@@ -62,8 +62,10 @@ public class TestDataService {
         List<Account> accounts = new ArrayList<>();
         int notificationCount = 0, ticketCount = 0;
         List<Staff> generatedStaff = new ArrayList<>();
+        int nextStaffCode = staff.findAll().stream().map(Staff::getStaffCode).filter(Objects::nonNull)
+                .filter(code -> code.matches("ST-\\d+")).mapToInt(code -> Integer.parseInt(code.substring(3))).max().orElse(200) + 1;
         for (int i = 0; i < request.staffCount(); i++) {
-            Staff member = new Staff(); member.setStaffCode("ST-" + (9000 + i)); member.setName(FIRST[i % FIRST.length] + " " + LAST[(i + 3) % LAST.length]);
+            Staff member = new Staff(); member.setStaffCode("ST-" + (nextStaffCode + i)); member.setName(FIRST[i % FIRST.length] + " " + LAST[(i + 3) % LAST.length]);
             member.setSpecialty(SPECIALTIES[i % SPECIALTIES.length]); member.setAvailability(i % 3 == 0 ? "offline" : "online");
             member.setWorkload(0); member.setTickets(0); member.setEmail("dummy.staff." + run + "." + (i + 1) + "@example.test");
             member.setPhone("+63 910 000 " + String.format("%04d", i + 1)); member.setGeneratedTestData(true);

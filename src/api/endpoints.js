@@ -16,6 +16,7 @@ export const endpoints = {
   getDashboardSummary: () => api.get('/api/dashboard/summary'),
 
   getTickets: () => api.get('/api/tickets'),
+  getTenantMaintenanceSchedules: () => api.get('/api/maintenance-schedules'),
   getTicketCategories: () => api.get('/api/tickets/categories'),
   getTicket: (id) => api.get(`/api/tickets/${id}`),
   createTicket: (payload) => api.post('/api/tickets', payload),
